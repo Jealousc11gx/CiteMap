@@ -31,6 +31,7 @@ jobs:
           RADAR_REMOTE_URL: ${{ secrets.RADAR_REMOTE_URL }}
           RADAR_REMOTE_TOKEN: ${{ secrets.RADAR_REMOTE_TOKEN }}
           RADAR_TEST_MODE: "true"
+          RADAR_TEST_USE_HISTORICAL: "true"
           RADAR_TEST_MAX_RESULTS: "5"
           RADAR_TEST_TOP_K: "3"
           RADAR_EMBEDDING_PROVIDER: ${{ vars.RADAR_EMBEDDING_PROVIDER || 'local' }}
