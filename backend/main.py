@@ -838,8 +838,12 @@ def api_sync_citations(paper_id: str):
 
 
 @app.get("/api/graph/citation")
-def api_graph_citation(paper_id: str):
-    graph = build_citation_graph(paper_id, DB_PATH)
+def api_graph_citation(paper_id: str, limit_per_direction: int = 12):
+    graph = build_citation_graph(
+        paper_id,
+        DB_PATH,
+        limit_per_direction=max(0, min(limit_per_direction, 30)),
+    )
     return {
         "nodes": [{"id": n, **graph.nodes[n]} for n in graph.nodes()],
         "edges": [{"source": u, "target": v, **graph.edges[u, v]} for u, v in graph.edges()],

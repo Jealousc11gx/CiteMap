@@ -87,6 +87,7 @@ export interface GraphNode {
   is_seed?: boolean;
   external?: boolean;
   similarity_score?: number;
+  citation_role?: "seed" | "reference" | "citing";
 }
 
 export interface GraphPaperReference {

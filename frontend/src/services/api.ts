@@ -222,8 +222,12 @@ export async function syncPaperCitations(paperId: string) {
   return res.json();
 }
 
-export async function fetchGraphCitation(paperId: string) {
-  const res = await fetch(`${API_BASE}/graph/citation?paper_id=${encodeURIComponent(paperId)}`);
+export async function fetchGraphCitation(paperId: string, limitPerDirection = 12) {
+  const params = new URLSearchParams({
+    paper_id: paperId,
+    limit_per_direction: String(limitPerDirection),
+  });
+  const res = await fetch(`${API_BASE}/graph/citation?${params}`);
   if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || "Failed to fetch citation graph");
   return res.json();
 }

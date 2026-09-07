@@ -431,7 +431,7 @@ describe('API services', () => {
       await expect(fetchGraphCitation('paper 1')).resolves.toEqual({ nodes: [], edges: [] });
       await expect(fetchGraphSimilarity('paper 1')).resolves.toEqual({ nodes: [], edges: [] });
       expect(mockFetch).toHaveBeenNthCalledWith(1, '/api/papers/paper%201/sync-citations', { method: 'POST' });
-      expect(mockFetch).toHaveBeenNthCalledWith(2, '/api/graph/citation?paper_id=paper%201');
+      expect(mockFetch).toHaveBeenNthCalledWith(2, '/api/graph/citation?paper_id=paper+1&limit_per_direction=12');
       expect(mockFetch).toHaveBeenNthCalledWith(3, '/api/graph/similarity?paper_id=paper%201');
     });
 

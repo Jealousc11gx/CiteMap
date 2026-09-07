@@ -36,6 +36,8 @@ interface ForceNode extends SimulationNodeDatum {
   id: string;
   size: number;
   linked: boolean;
+  columnX: number;
+  rowY: number;
 }
 
 interface ForceLink extends SimulationLinkDatum<ForceNode> {
@@ -78,7 +80,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function getNodeRadius(node: GraphNode): number {
-  const base = node.group === "team" ? 32 : 15;
+  const base = node.group === "team" ? 32 : node.is_seed ? 22 : 15;
   if (node.citation_count !== undefined && node.citation_count !== null) {
     return base + Math.min(10, Math.log10(node.citation_count + 1) * 2.8);
   }
@@ -118,12 +120,36 @@ function createForceLayout(
   const linkedNodeIds = new Set(
     edges.flatMap((edge) => [String(edge.source), String(edge.target)]),
   );
-  const forceNodes: ForceNode[] = nodes.map((node, index) => ({
-    id: node.id,
-    size: getNodeRadius(node),
-    linked: linkedNodeIds.has(node.id),
-    ...getInitialPosition(index, nodes.length, width, height),
-  }));
+  const isCitationLayout = nodes.some((node) => Boolean(node.citation_role));
+  const roleCounts = {
+    reference: nodes.filter((node) => node.citation_role === "reference").length,
+    citing: nodes.filter((node) => node.citation_role === "citing").length,
+  };
+  const roleIndexes = { reference: 0, citing: 0 };
+  const columnDistance = Math.max(145, Math.min(240, width * 0.22));
+  const forceNodes: ForceNode[] = nodes.map((node, index) => {
+    const position = isCitationLayout && node.citation_role
+      ? (() => {
+          if (node.citation_role === "seed") return { x: 0, y: 0 };
+          const role = node.citation_role;
+          const count = roleCounts[role];
+          const roleIndex = roleIndexes[role]++;
+          const spacing = Math.min(58, Math.max(34, (height * 0.72) / Math.max(count, 1)));
+          return {
+            x: role === "reference" ? -columnDistance : columnDistance,
+            y: (roleIndex - (count - 1) / 2) * spacing,
+          };
+        })()
+      : getInitialPosition(index, nodes.length, width, height);
+    return {
+      id: node.id,
+      size: getNodeRadius(node),
+      linked: linkedNodeIds.has(node.id),
+      columnX: node.citation_role === "reference" ? -columnDistance : node.citation_role === "citing" ? columnDistance : 0,
+      rowY: position.y,
+      ...position,
+    };
+  });
 
   const nodeById = new Map(forceNodes.map((n) => [n.id, n]));
   const forceLinks: ForceLink[] = edges
@@ -135,7 +161,7 @@ function createForceLayout(
     }));
 
   const nodeCount = forceNodes.length;
-  const linkDistance = nodeCount <= 18 ? 120 : nodeCount <= 48 ? 90 : 70;
+  const linkDistance = isCitationLayout ? columnDistance : nodeCount <= 18 ? 120 : nodeCount <= 48 ? 90 : 70;
   const chargeRange = Math.min(700, Math.max(width, height) * 0.8);
   const linkedCharge = nodeCount <= 24 ? -190 : nodeCount <= 80 ? -140 : -100;
 
@@ -145,7 +171,7 @@ function createForceLayout(
       forceLink<ForceNode, ForceLink>(forceLinks)
         .id((d) => d.id)
         .distance(linkDistance)
-        .strength(0.5),
+        .strength(isCitationLayout ? 0.18 : 0.5),
     )
     .force(
       "charge",
@@ -153,7 +179,7 @@ function createForceLayout(
         .distanceMin(1)
         .distanceMax(chargeRange)
         .theta(0.5)
-        .strength((node) => node.linked ? linkedCharge : linkedCharge * 0.28),
+        .strength((node) => isCitationLayout ? -70 : node.linked ? linkedCharge : linkedCharge * 0.28),
     )
     .force(
       "collision",
@@ -161,8 +187,8 @@ function createForceLayout(
         .radius((d) => Math.max(30, d.size + 12))
         .iterations(2),
     )
-    .force("x", forceX<ForceNode>(0).strength(0.075))
-    .force("y", forceY<ForceNode>(0).strength(0.075))
+    .force("x", forceX<ForceNode>((node) => node.columnX).strength(isCitationLayout ? 0.42 : 0.075))
+    .force("y", forceY<ForceNode>((node) => isCitationLayout ? node.rowY : 0).strength(isCitationLayout ? 0.38 : 0.075))
     .force("center", forceCenter<ForceNode>(0, 0))
     .velocityDecay(0.5)
     .alpha(1)
@@ -228,15 +254,16 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
   const strokeColor = isDark ? 0x334155 : 0xcbd5e1;
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    const host = containerRef.current;
+    if (!host) return;
 
     let cancelled = false;
 
-    async function init() {
+    async function init(hostElement: HTMLDivElement) {
       const app = new Application();
       await app.init({
-        width: containerRef.current!.clientWidth,
-        height: containerRef.current!.clientHeight,
+        width: hostElement.clientWidth,
+        height: hostElement.clientHeight,
         antialias: true,
         autoDensity: true,
         backgroundAlpha: 0,
@@ -251,7 +278,7 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
       }
 
       app.canvas.className = "h-full w-full";
-      containerRef.current!.appendChild(app.canvas);
+      hostElement.appendChild(app.canvas);
       appRef.current = app;
 
       const scene = new Container();
@@ -274,8 +301,8 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
       labelLayerRef.current = labelLayer;
 
       sizeRef.current = {
-        width: containerRef.current!.clientWidth,
-        height: containerRef.current!.clientHeight,
+        width: hostElement.clientWidth,
+        height: hostElement.clientHeight,
       };
 
       rebuildGraph();
@@ -364,7 +391,7 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
       };
     }
 
-    const cleanupPromise = init();
+    const cleanupPromise = init(host);
 
     return () => {
       cancelled = true;
@@ -452,7 +479,7 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
       maxY = Math.max(maxY, y);
     }
 
-    const padding = 80;
+    const padding = data.nodes.some((node) => Boolean(node.citation_role)) ? 44 : 80;
     const width = Math.max(1, maxX - minX);
     const height = Math.max(1, maxY - minY);
     const availableWidth = Math.max(1, sizeRef.current.width - padding * 2);
@@ -573,24 +600,29 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
     const body = new Graphics();
     const isTeam = node.group === "team";
     const isSeed = Boolean(node.is_seed);
+    const isCitationNode = Boolean(node.citation_role);
     const color = isTeam
       ? colorToNumber(nodeColor(node))
-      : isSeed ? colorToNumber(nodeColor(node))
+      : isSeed || isCitationNode ? colorToNumber(nodeColor(node))
       : isDark ? 0x1e293b : 0xffffff;
 
     halo.circle(0, 0, radius + 7).stroke({ color: isDark ? 0x93c5fd : 0x1d4ed8, width: 3, alpha: 0.95 });
     halo.visible = false;
-    body.circle(0, 0, radius).fill({ color, alpha: isTeam ? 0.96 : isSeed ? 0.14 : 1 });
-    body.circle(0, 0, radius).stroke({ color: isTeam || isSeed ? color : strokeColor, width: isTeam || isSeed ? 2 : 1.5, alpha: 0.9 });
+    body.circle(0, 0, radius).fill({ color, alpha: isTeam || isSeed ? 0.96 : isCitationNode ? 0.12 : 1 });
+    body.circle(0, 0, radius).stroke({ color: isTeam || isSeed || isCitationNode ? color : strokeColor, width: isTeam || isSeed ? 2 : 1.5, alpha: 0.9 });
     if (isTeam) body.circle(0, 0, radius + 5).stroke({ color, width: 1.5, alpha: 0.2 });
+    if (isSeed) body.circle(0, 0, radius + 6).stroke({ color, width: 2, alpha: 0.28 });
 
     const displayLabel = truncateLabel(node.label || node.id, isTeam ? 22 : 18);
     const label = new Text({
       text: displayLabel,
-      anchor: { x: 0.5, y: isTeam ? 0.5 : 0 },
+      anchor: {
+        x: node.citation_role === "reference" ? 1 : node.citation_role === "citing" ? 0 : 0.5,
+        y: isTeam ? 0.5 : node.citation_role && node.citation_role !== "seed" ? 0.5 : 0,
+      },
       style: {
         fontFamily: "Inter, system-ui, sans-serif",
-        fontSize: isTeam ? 10.5 : 11,
+        fontSize: isTeam ? 10.5 : node.citation_role ? 11.5 : 11,
         fontWeight: "600",
         fill: isTeam ? 0xffffff : textColor,
         align: "center",
@@ -692,14 +724,31 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
 
     const occupiedLabelRects: Array<{ left: number; top: number; right: number; bottom: number }> = [];
     const orderedNodeViews = Array.from(nodeViewsRef.current.values()).sort(
-      (a, b) => (b.node.weighted_degree || b.node.degree || 0) - (a.node.weighted_degree || a.node.degree || 0),
+      (a, b) => Number(Boolean(b.node.is_seed)) - Number(Boolean(a.node.is_seed))
+        || (b.node.similarity_score || 0) - (a.node.similarity_score || 0)
+        || (b.node.citation_count || 0) - (a.node.citation_count || 0)
+        || (b.node.weighted_degree || b.node.degree || 0) - (a.node.weighted_degree || a.node.degree || 0),
     );
-    for (const nodeView of orderedNodeViews) {
+    const labelBudget = orderedNodeViews.length <= 18 ? orderedNodeViews.length : 12;
+    const citationLabelIds = new Set<string>();
+    if (orderedNodeViews.some((view) => Boolean(view.node.citation_role))) {
+      for (const role of ["reference", "citing"] as const) {
+        orderedNodeViews
+          .filter((view) => view.node.citation_role === role)
+          .slice(0, 6)
+          .forEach((view) => citationLabelIds.add(view.node.id));
+      }
+    }
+    for (const [nodeIndex, nodeView] of orderedNodeViews.entries()) {
       const x = typeof nodeView.forceNode.x === "number" ? nodeView.forceNode.x : 0;
       const y = typeof nodeView.forceNode.y === "number" ? nodeView.forceNode.y : 0;
       nodeView.root.position.set(x, y);
       const isTeam = nodeView.node.group === "team";
-      nodeView.label.position.set(x, isTeam ? y : y + getNodeRadius(nodeView.node) + 10);
+      const nodeRadius = getNodeRadius(nodeView.node);
+      nodeView.label.position.set(
+        nodeView.node.citation_role === "reference" ? x - nodeRadius - 8 : nodeView.node.citation_role === "citing" ? x + nodeRadius + 8 : x,
+        isTeam || (nodeView.node.citation_role && nodeView.node.citation_role !== "seed") ? y : y + nodeRadius + 10,
+      );
       const matchesSearch = !matchedNodeIds?.size || matchedNodeIds.has(nodeView.node.id);
       const isFocused = !focusedNodeIds || focusedNodeIds.has(nodeView.node.id);
       nodeView.root.alpha = matchesSearch && isFocused ? 1 : matchesSearch || isFocused ? 0.56 : 0.16;
@@ -710,17 +759,17 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
       nodeView.root.scale.set(1);
       nodeView.halo.visible = selectedNodeId === nodeView.node.id;
 
-      const isRequiredLabel = isTeam || selectedNodeId === nodeView.node.id || Boolean(matchedNodeIds?.has(nodeView.node.id));
+      const isRequiredLabel = isTeam || Boolean(nodeView.node.is_seed) || citationLabelIds.has(nodeView.node.id) || selectedNodeId === nodeView.node.id || Boolean(matchedNodeIds?.has(nodeView.node.id));
       const rect = {
         left: x - nodeView.label.width / 2 - 3,
-        top: isTeam ? y - nodeView.label.height / 2 - 3 : y + getNodeRadius(nodeView.node) + 7,
+        top: isTeam || (nodeView.node.citation_role && nodeView.node.citation_role !== "seed") ? y - nodeView.label.height / 2 - 3 : y + nodeRadius + 7,
         right: x + nodeView.label.width / 2 + 3,
-        bottom: isTeam ? y + nodeView.label.height / 2 + 3 : y + getNodeRadius(nodeView.node) + nodeView.label.height + 13,
+        bottom: isTeam || (nodeView.node.citation_role && nodeView.node.citation_role !== "seed") ? y + nodeView.label.height / 2 + 3 : y + nodeRadius + nodeView.label.height + 13,
       };
       const overlaps = occupiedLabelRects.some((placed) => !(
         rect.right < placed.left || rect.left > placed.right || rect.bottom < placed.top || rect.top > placed.bottom
       ));
-      nodeView.label.visible = isRequiredLabel || !overlaps;
+      nodeView.label.visible = isRequiredLabel || (!nodeView.node.citation_role && nodeIndex < labelBudget && !overlaps);
       if (nodeView.label.visible) occupiedLabelRects.push(rect);
     }
   }

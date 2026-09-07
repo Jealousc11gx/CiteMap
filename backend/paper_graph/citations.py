@@ -260,8 +260,12 @@ def _seed_row(conn, paper_id: str):
     ).fetchone()
 
 
-def build_citation_graph(paper_id: str, db_path: Optional[Path] = None) -> nx.DiGraph:
-    """返回种子论文一阶邻域中的真实有向引用关系。"""
+def build_citation_graph(
+    paper_id: str,
+    db_path: Optional[Path] = None,
+    limit_per_direction: int = 12,
+) -> nx.DiGraph:
+    """返回种子论文的一阶引用关系，默认按方向裁剪为可读子图。"""
     init_db(db_path)
     conn = get_connection(db_path)
     graph = nx.DiGraph()
@@ -270,30 +274,55 @@ def build_citation_graph(paper_id: str, db_path: Optional[Path] = None) -> nx.Di
         conn.close()
         return graph
     seed_id = str(seed_row["scholar_id"])
-    ids = {seed_id}
-    for row in conn.execute(
+    direct_edges = [dict(row) for row in conn.execute(
         "SELECT citing_id, cited_id FROM citation_edges WHERE citing_id = ? OR cited_id = ?",
         (seed_id, seed_id),
-    ).fetchall():
+    ).fetchall()]
+    ids = {seed_id}
+    for row in direct_edges:
         ids.update((str(row["citing_id"]), str(row["cited_id"])))
     placeholders = ",".join("?" for _ in ids)
     papers = {
         str(row["scholar_id"]): dict(row)
         for row in conn.execute(f"SELECT * FROM citation_papers WHERE scholar_id IN ({placeholders})", tuple(ids)).fetchall()
     }
-    for row in papers.values():
-        _add_node(graph, row, seed_id)
-    for row in conn.execute(
-        f"SELECT citing_id, cited_id FROM citation_edges WHERE citing_id IN ({placeholders}) AND cited_id IN ({placeholders})",
-        (*ids, *ids),
-    ).fetchall():
-        source = papers.get(str(row["citing_id"]))
-        target = papers.get(str(row["cited_id"]))
-        if source and target:
-            graph.add_edge(
-                _node_id(source), _node_id(target), weight=1, directed=True,
-                relation_types=["citation"], title="引用",
-            )
+    # 未返回元数据的占位论文无法提供任何研究线索，不进入可视化。
+    valid_ids = {
+        scholar_id for scholar_id, row in papers.items()
+        if scholar_id == seed_id or (row.get("title") and row.get("title") != "未命名论文")
+    }
+    references = [
+        str(row["cited_id"]) for row in direct_edges
+        if str(row["citing_id"]) == seed_id and str(row["cited_id"]) in valid_ids
+    ]
+    citations = [
+        str(row["citing_id"]) for row in direct_edges
+        if str(row["cited_id"]) == seed_id and str(row["citing_id"]) in valid_ids
+    ]
+    rank_key = lambda scholar_id: (
+        -(papers[scholar_id].get("citation_count") or 0),
+        -(papers[scholar_id].get("year") or 0),
+        papers[scholar_id].get("title") or "",
+    )
+    references = sorted(set(references), key=rank_key)
+    citations = sorted(set(citations), key=rank_key)
+    if limit_per_direction > 0:
+        references = references[:limit_per_direction]
+        citations = citations[:limit_per_direction]
+
+    _add_node(graph, papers[seed_id], seed_id, citation_role="seed")
+    for scholar_id in references:
+        _add_node(graph, papers[scholar_id], seed_id, citation_role="reference")
+        graph.add_edge(
+            _node_id(papers[seed_id]), _node_id(papers[scholar_id]), weight=1,
+            directed=True, relation_types=["citation"], title="种子论文引用了该论文",
+        )
+    for scholar_id in citations:
+        _add_node(graph, papers[scholar_id], seed_id, citation_role="citing")
+        graph.add_edge(
+            _node_id(papers[scholar_id]), _node_id(papers[seed_id]), weight=1,
+            directed=True, relation_types=["citation"], title="该论文引用了种子论文",
+        )
     for node_id in graph.nodes:
         graph.nodes[node_id]["degree"] = graph.degree(node_id)
     conn.close()

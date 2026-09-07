@@ -56,6 +56,8 @@ const NODE_COLORS = {
   team: "#2563eb",
   paper: "#64748b",
   seed: "#2563eb",
+  reference: "#64748b",
+  citing: "#0284c7",
   default: "#94a3b8",
 };
 
@@ -165,7 +167,7 @@ function DetailPanel({
           <div>
             <Badge variant="secondary">关系</Badge>
             <h2 className="mt-3 text-sm font-semibold leading-5">{source?.label || edge.source}</h2>
-            <p className="my-1 text-xs text-muted-foreground">关联</p>
+            <p className="my-1 text-xs text-muted-foreground">{edge.directed ? "引用" : "关联"}</p>
             <h2 className="text-sm font-semibold leading-5">{target?.label || edge.target}</h2>
           </div>
           <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="关闭关系详情"><X /></Button>
@@ -231,7 +233,7 @@ function DetailPanel({
     <aside className="w-[340px] shrink-0 overflow-y-auto border-l border-border bg-card" aria-label="节点详情">
       <div className="flex items-start justify-between border-b border-border p-5">
         <div className="min-w-0 pr-2">
-          <Badge variant={isTeam ? "default" : "secondary"}>{isTeam ? (node!.team_type === "inferred" ? "推断团队" : "研究团队") : "论文"}</Badge>
+          <Badge variant={isTeam || node!.is_seed ? "default" : "secondary"}>{isTeam ? (node!.team_type === "inferred" ? "推断团队" : "研究团队") : node!.paper_id ? "我的论文" : "外部论文"}</Badge>
           <h2 className="mt-3 text-lg font-semibold leading-6 text-balance">{node!.title || node!.label || node!.id}</h2>
           {node!.description && <p className="mt-2 text-sm leading-6 text-muted-foreground">{node!.description}</p>}
         </div>
@@ -280,6 +282,7 @@ export function Graph() {
   const [paperRelationMode, setPaperRelationMode] = useState<PaperRelationMode>("metadata");
   const [seedPaperId, setSeedPaperId] = useState("");
   const [syncingCitations, setSyncingCitations] = useState(false);
+  const [citationLimit, setCitationLimit] = useState(12);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -336,16 +339,18 @@ export function Graph() {
     setError(null);
     try {
       const data = normalizeGraphData(
-        mode === "citation" ? await fetchGraphCitation(paperId) : await fetchGraphSimilarity(paperId),
+        mode === "citation" ? await fetchGraphCitation(paperId, citationLimit) : await fetchGraphSimilarity(paperId),
       );
       if (mode === "citation") setCitationData(data);
       else setSimilarityData(data);
+      setSelectedNode(data.nodes.find((node) => node.is_seed) || null);
+      setSelectedEdge(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [citationLimit]);
 
   useEffect(() => {
     if (view === "paper" && paperRelationMode !== "metadata" && seedPaperId) {
@@ -360,13 +365,18 @@ export function Graph() {
     try {
       await syncPaperCitations(seedPaperId);
       const [citation, similarity, paper] = await Promise.all([
-        fetchGraphCitation(seedPaperId),
+        fetchGraphCitation(seedPaperId, citationLimit),
         fetchGraphSimilarity(seedPaperId),
         fetchGraphPaper(activeProject?.id),
       ]);
-      setCitationData(normalizeGraphData(citation));
-      setSimilarityData(normalizeGraphData(similarity));
+      const normalizedCitation = normalizeGraphData(citation);
+      const normalizedSimilarity = normalizeGraphData(similarity);
+      setCitationData(normalizedCitation);
+      setSimilarityData(normalizedSimilarity);
       setPaperData(normalizeGraphData(paper));
+      const activeData = paperRelationMode === "citation" ? normalizedCitation : normalizedSimilarity;
+      setSelectedNode(activeData.nodes.find((node) => node.is_seed) || null);
+      setSelectedEdge(null);
     } catch (syncError) {
       setError(syncError instanceof Error ? syncError.message : String(syncError));
     } finally {
@@ -472,7 +482,13 @@ export function Graph() {
               <PixiGraph
                 ref={graphRef}
                 data={visibleData!}
-                nodeColor={(node) => node.is_seed ? NODE_COLORS.seed : NODE_COLORS[node.group as keyof typeof NODE_COLORS] || NODE_COLORS.default}
+                nodeColor={(node) => node.is_seed
+                  ? NODE_COLORS.seed
+                  : node.citation_role === "reference"
+                    ? NODE_COLORS.reference
+                    : node.citation_role === "citing"
+                      ? NODE_COLORS.citing
+                      : NODE_COLORS[node.group as keyof typeof NODE_COLORS] || NODE_COLORS.default}
                 onNodeClick={selectNode}
                 onEdgeClick={selectEdge}
                 onBackgroundClick={() => { setSelectedNode(null); setSelectedEdge(null); }}
@@ -501,7 +517,12 @@ export function Graph() {
                   <span className="flex items-center gap-1.5"><i className="h-0.5 w-5 bg-indigo-600 dark:bg-indigo-400" />两者均有</span>
                 </>
               ) : paperRelationMode === "citation" ? (
-                <><span className="flex items-center gap-1.5"><i className="h-0.5 w-5 bg-sky-600 dark:bg-sky-400" />箭头指向被引用论文</span></>
+                <>
+                  <span className="flex items-center gap-1.5"><i className="h-3 w-3 rounded-full bg-primary" />我的论文</span>
+                  <span className="flex items-center gap-1.5"><i className="h-3 w-3 rounded-full bg-slate-500" />参考文献</span>
+                  <span className="flex items-center gap-1.5"><i className="h-3 w-3 rounded-full bg-sky-600" />引用该文</span>
+                  <span>箭头指向被引用论文</span>
+                </>
               ) : (
                 <><span className="flex items-center gap-1.5"><i className="h-0.5 w-5 bg-teal-600 dark:bg-teal-400" />共享参考文献相似度</span></>
               )}
@@ -540,6 +561,7 @@ export function Graph() {
           <div className="flex items-center justify-end gap-2">
             {view === "paper" && paperRelationMode !== "metadata" && <select className="h-8 max-w-56 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={seedPaperId} onChange={(event) => { setSeedPaperId(event.target.value); setSelectedNode(null); setSelectedEdge(null); }} aria-label="选择种子论文">{(paperData?.nodes || []).map((node) => <option key={node.id} value={node.id}>{node.title || node.label}</option>)}</select>}
             {view === "paper" && paperRelationMode !== "metadata" && <Button variant="outline" size="sm" className="h-8" onClick={() => void syncCitations()} disabled={!seedPaperId || syncingCitations}>{syncingCitations ? <Loader2 className="animate-spin" /> : <RefreshCcw />}同步引用</Button>}
+            {view === "paper" && paperRelationMode === "citation" && <select className="h-8 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={citationLimit} onChange={(event) => setCitationLimit(Number(event.target.value))} aria-label="引用节点数量"><option value={8}>每侧 8 篇</option><option value={12}>每侧 12 篇</option><option value={20}>每侧 20 篇</option><option value={30}>每侧 30 篇</option></select>}
             <div className="relative w-64"><Search className="absolute left-3 top-2 h-4 w-4 text-muted-foreground" /><Input placeholder="搜索标题、作者、机构..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-8 pl-9 pr-16" aria-label="搜索图谱节点" />{searchQuery && <span className="absolute right-2 top-2 text-xs tabular-nums text-muted-foreground">{matchedNodeIds.size} 项</span>}</div>
             {view === "paper" && paperRelationMode === "metadata" && <select className="h-8 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={yearFilter} onChange={(event) => setYearFilter(event.target.value)} aria-label="按年份筛选"><option value="all">全部年份</option>{years.map((year) => <option key={year} value={year}>{year}</option>)}</select>}
             {view === "paper" && paperRelationMode === "metadata" && <select className="h-8 max-w-40 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} aria-label="按领域筛选"><option value="all">全部领域</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select>}
