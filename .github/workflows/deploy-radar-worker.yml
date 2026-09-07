@@ -59,6 +59,10 @@ jobs:
           if ! echo "$columns" | grep -q 'ai_summary'; then
             npx --yes wrangler@4 d1 execute citemap-radar --remote --config wrangler.ci.toml --file migrations/0003_add_ai_fields.sql
           fi
+          columns=$(npx --yes wrangler@4 d1 execute citemap-radar --remote --config wrangler.ci.toml --command "PRAGMA table_info(items)" --json)
+          if ! echo "$columns" | grep -q 'affiliations'; then
+            npx --yes wrangler@4 d1 execute citemap-radar --remote --config wrangler.ci.toml --file migrations/0004_add_affiliations.sql
+          fi
 
       - name: Deploy Worker
         id: deploy-worker

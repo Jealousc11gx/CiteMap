@@ -27,7 +27,7 @@ def test_sync_remote_changes_pulls_history_and_advances_cursor(tmp_db):
     conn = get_connection(tmp_db)
     project = create_project(conn, "Sync")
     remote = FakeRemote([
-        {"events": [{"type": "recommended", "project_id": project["id"], "arxiv_id": "2609.1", "title": "A", "abstract": "x", "score": 0.8, "tldr": "短结论", "ai_summary": "中文总结"}], "next_cursor": "1", "has_more": True},
+        {"events": [{"type": "recommended", "project_id": project["id"], "arxiv_id": "2609.1", "title": "A", "abstract": "x", "score": 0.8, "tldr": "短结论", "ai_summary": "中文总结", "affiliations": ["测试大学"], "corresponding_authors": ["张老师"]}], "next_cursor": "1", "has_more": True},
         {"events": [{"type": "read", "project_id": project["id"], "arxiv_id": "2609.1"}], "next_cursor": "2", "has_more": False},
     ])
     result = sync_remote_changes(conn, remote)
@@ -35,8 +35,8 @@ def test_sync_remote_changes_pulls_history_and_advances_cursor(tmp_db):
     assert get_radar_sync_cursor(conn) == "2"
     state = conn.execute("SELECT state FROM radar_matches").fetchone()["state"]
     assert state == "read"
-    candidate = conn.execute("SELECT tldr, ai_summary FROM radar_candidates").fetchone()
-    assert dict(candidate) == {"tldr": "短结论", "ai_summary": "中文总结"}
+    candidate = conn.execute("SELECT tldr, ai_summary, affiliations, corresponding_authors FROM radar_candidates").fetchone()
+    assert dict(candidate) == {"tldr": "短结论", "ai_summary": "中文总结", "affiliations": '["测试大学"]', "corresponding_authors": '["张老师"]'}
     conn.close()
 
 

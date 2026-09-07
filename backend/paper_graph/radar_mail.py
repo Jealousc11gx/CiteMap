@@ -10,14 +10,25 @@ from email.mime.text import MIMEText
 from email.utils import formataddr, parseaddr
 
 
+def _join_values(value: object) -> str:
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value if str(item).strip())
+    return str(value or "")
+
+
 def render_radar_email(items: list[dict], *, title: str = "CiteMap 论文雷达") -> str:
     blocks = []
     for item in items:
         link = html.escape(str(item.get("click_url") or item.get("arxiv_url") or "#"), quote=True)
-        paper_title = html.escape(str(item.get("title") or "无标题"))
+        original_title = html.escape(str(item.get("title") or "无标题"))
+        chinese_title = html.escape(str(item.get("title_zh") or ""))
+        paper_title = chinese_title or original_title
+        original_title_block = f'<div style="color:#666;font-size:13px;margin-top:4px">{original_title}</div>' if chinese_title else ""
         authors = html.escape(", ".join(item.get("authors") or []))
         tldr = html.escape(str(item.get("tldr") or "暂无 TLDR"))
-        summary = html.escape(str(item.get("ai_summary") or item.get("abstract_zh") or item.get("abstract") or "暂无摘要"))
+        summary = html.escape(str(item.get("ai_summary") or item.get("abstract_zh") or "暂无中文 AI 摘要"))
+        affiliations = html.escape(_join_values(item.get("affiliations")) or "未从论文首页识别")
+        corresponding_authors = html.escape(_join_values(item.get("corresponding_authors")) or "未明确标注")
         contribution = html.escape(str(item.get("core_contribution") or ""))
         contribution_block = f'<p style="font-size:14px;line-height:1.6"><strong>核心贡献：</strong>{contribution}</p>' if contribution else ""
         score = item.get("score")
@@ -26,7 +37,10 @@ def render_radar_email(items: list[dict], *, title: str = "CiteMap 论文雷达"
             f"""
             <article style=\"border:1px solid #ddd;border-radius:8px;padding:16px;margin:12px 0;font-family:Arial,sans-serif\">
               <h2 style=\"font-size:18px;margin:0 0 8px\"><a href=\"{link}\">{paper_title}</a></h2>
+              {original_title_block}
               <div style=\"color:#666;font-size:13px\">{authors}</div>
+              <div style=\"color:#666;font-size:13px;margin-top:6px\"><strong>机构：</strong>{affiliations}</div>
+              <div style=\"color:#666;font-size:13px;margin-top:4px\"><strong>通讯作者：</strong>{corresponding_authors}</div>
               <div style=\"color:#555;font-size:13px;margin-top:8px\">匹配分数：{score_text}</div>
               <p style=\"font-size:14px;line-height:1.6\"><strong>TLDR：</strong>{tldr}</p>
               <p style=\"font-size:14px;line-height:1.6\"><strong>AI 摘要：</strong>{summary}</p>

@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS items (
   abstract TEXT NOT NULL DEFAULT '',
   authors TEXT NOT NULL DEFAULT '[]',
   categories TEXT NOT NULL DEFAULT '[]',
+  affiliations TEXT NOT NULL DEFAULT '[]',
+  corresponding_authors TEXT NOT NULL DEFAULT '[]',
   published_date TEXT,
   arxiv_url TEXT NOT NULL DEFAULT '',
   pdf_url TEXT,

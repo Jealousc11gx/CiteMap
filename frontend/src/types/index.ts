@@ -122,6 +122,8 @@ export interface RadarMatch {
   abstract: string;
   authors: string[];
   categories: string[];
+  affiliations?: string[];
+  corresponding_authors?: string[];
   published_date?: string | null;
   updated_date?: string | null;
   arxiv_url: string;

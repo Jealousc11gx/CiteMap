@@ -43,6 +43,19 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return value.strip().casefold() in {"1", "true", "yes", "on"}
 
 
+def _merge_email_items(payload: list[dict], created_items: list[dict]) -> list[dict]:
+    """保留 Worker 点击链接，同时以本次 LLM 结果覆盖远端空字段。"""
+    payload_by_id = {item.get("arxiv_id"): item for item in payload}
+    merged = []
+    for stored in created_items:
+        generated = payload_by_id.get(stored.get("arxiv_id"), {})
+        item = {**stored, **generated}
+        if stored.get("click_url"):
+            item["click_url"] = stored["click_url"]
+        merged.append(item)
+    return merged
+
+
 def run_remote_radar() -> dict:
     base_url = os.environ.get("RADAR_REMOTE_URL", "").strip()
     token = os.environ.get("RADAR_REMOTE_TOKEN", "").strip()
@@ -105,7 +118,7 @@ def run_remote_radar() -> dict:
         enrich_with_tldr(payload)
         created = client.create_items(payload)
         new_items = created.get("new_items") or []
-        email_items = new_items or (payload if test_mode else [])
+        email_items = _merge_email_items(payload, new_items) if new_items else (payload if test_mode else [])
         if email_items:
             subject_prefix = "CiteMap 论文雷达测试" if test_mode else "CiteMap 论文雷达"
             send_radar_email(email_items, subject=f"{subject_prefix} {date.today().isoformat()}")

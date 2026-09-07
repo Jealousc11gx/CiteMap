@@ -247,6 +247,8 @@ def init_db(db_path: Optional[Path] = None) -> None:
             abstract TEXT NOT NULL DEFAULT '',
             authors TEXT NOT NULL DEFAULT '[]',
             categories TEXT NOT NULL DEFAULT '[]',
+            affiliations TEXT NOT NULL DEFAULT '[]',
+            corresponding_authors TEXT NOT NULL DEFAULT '[]',
             published_date TEXT,
             updated_date TEXT,
             arxiv_url TEXT NOT NULL DEFAULT '',
@@ -262,9 +264,10 @@ def init_db(db_path: Optional[Path] = None) -> None:
             first_seen_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    for column in ("tldr", "ai_summary", "title_zh", "abstract_zh", "core_contribution", "method", "result", "limitations"):
+    for column in ("tldr", "ai_summary", "title_zh", "abstract_zh", "core_contribution", "method", "result", "limitations", "affiliations", "corresponding_authors"):
         try:
-            cur.execute(f"ALTER TABLE radar_candidates ADD COLUMN {column} TEXT")
+            default = " NOT NULL DEFAULT '[]'" if column in {"affiliations", "corresponding_authors"} else ""
+            cur.execute(f"ALTER TABLE radar_candidates ADD COLUMN {column} TEXT{default}")
         except sqlite3.OperationalError:
             pass
     cur.execute("CREATE INDEX IF NOT EXISTS idx_radar_candidates_published ON radar_candidates(published_date)")

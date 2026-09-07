@@ -70,3 +70,15 @@ def test_radar_test_fails_when_cloud_has_no_profiles(monkeypatch):
 
     with pytest.raises(RuntimeError, match="云端没有项目 profile"):
         radar_cli.run_remote_radar()
+
+
+def test_merge_email_items_keeps_click_url_and_generated_ai_fields():
+    payload = [{"arxiv_id": "1", "ai_summary": "中文摘要", "affiliations": ["测试大学"]}]
+    stored = [{"arxiv_id": "1", "ai_summary": "", "affiliations": [], "click_url": "https://radar/r/1"}]
+
+    assert radar_cli._merge_email_items(payload, stored) == [{
+        "arxiv_id": "1",
+        "ai_summary": "中文摘要",
+        "affiliations": ["测试大学"],
+        "click_url": "https://radar/r/1",
+    }]

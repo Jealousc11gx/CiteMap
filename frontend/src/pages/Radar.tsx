@@ -53,6 +53,8 @@ function RadarCard({ match, onState }: { match: RadarMatch; onState: (match: Rad
         <span className="rounded-full bg-muted px-2 py-1 text-xs">{match.state}</span>
       </div>
       {match.title_zh && <p className="mt-2 text-sm font-medium">{match.title_zh}</p>}
+      {!!match.affiliations?.length && <p className="mt-2 text-xs text-muted-foreground">机构：{match.affiliations.join(" · ")}</p>}
+      {!!match.corresponding_authors?.length && <p className="mt-1 text-xs text-muted-foreground">通讯作者：{match.corresponding_authors.join("、")}</p>}
       {match.tldr && <p className="mt-3 text-sm leading-6"><span className="font-medium">TLDR：</span>{match.tldr}</p>}
       <p className="mt-3 line-clamp-4 text-sm leading-6 text-muted-foreground">{match.ai_summary || match.abstract_zh || match.abstract || "暂无摘要"}</p>
       <p className="mt-3 text-xs text-muted-foreground">{match.reason || "项目语义相似度"}</p>

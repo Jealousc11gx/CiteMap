@@ -14,6 +14,16 @@ function authorized(request, env) {
   return request.headers.get("authorization") === `Bearer ${expected}`;
 }
 
+function parseList(value) {
+  if (Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 async function health(env, origin) {
   if (!env.RADAR_TOKEN) {
     return json({ ok: false, error: "RADAR_TOKEN is not configured" }, 503, origin);
@@ -31,8 +41,10 @@ function eventPayload(item) {
     arxiv_id: item.arxiv_id,
     title: item.title,
     abstract: item.abstract,
-    authors: JSON.parse(item.authors || "[]"),
-    categories: JSON.parse(item.categories || "[]"),
+    authors: parseList(item.authors),
+    categories: parseList(item.categories),
+    affiliations: parseList(item.affiliations),
+    corresponding_authors: parseList(item.corresponding_authors),
     published_date: item.published_date,
     arxiv_url: item.arxiv_url,
     pdf_url: item.pdf_url,
@@ -64,13 +76,15 @@ async function createItems(request, env) {
       .bind(item.project_id, item.arxiv_id).first();
     if (existing) {
       await env.DB.prepare(`
-        UPDATE items SET tldr=?, ai_summary=?, title_zh=?, abstract_zh=?, core_contribution=?, method=?, result=?, limitations=?, score=?, reason=?, updated_at=?
+        UPDATE items SET tldr=?, ai_summary=?, title_zh=?, abstract_zh=?, core_contribution=?, method=?, result=?, limitations=?, affiliations=?, corresponding_authors=?, score=?, reason=?, updated_at=?
         WHERE id=?
       `).bind(
         item.tldr || existing.tldr || "", item.ai_summary || existing.ai_summary || "",
         item.title_zh || existing.title_zh || "", item.abstract_zh || existing.abstract_zh || "",
         item.core_contribution || existing.core_contribution || "", item.method || existing.method || "",
         item.result || existing.result || "", item.limitations || existing.limitations || "",
+        JSON.stringify(item.affiliations || parseList(existing.affiliations)),
+        JSON.stringify(item.corresponding_authors || parseList(existing.corresponding_authors)),
         Number(item.score ?? existing.score ?? 0), item.reason || existing.reason || "",
         new Date().toISOString(), existing.id,
       ).run();
@@ -80,11 +94,12 @@ async function createItems(request, env) {
     }
     const token = crypto.randomUUID();
     await env.DB.prepare(`
-      INSERT INTO items (project_id, arxiv_id, title, abstract, authors, categories, published_date, arxiv_url, pdf_url, score, reason, tldr, ai_summary, title_zh, abstract_zh, core_contribution, method, result, limitations, click_token)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO items (project_id, arxiv_id, title, abstract, authors, categories, affiliations, corresponding_authors, published_date, arxiv_url, pdf_url, score, reason, tldr, ai_summary, title_zh, abstract_zh, core_contribution, method, result, limitations, click_token)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       item.project_id, item.arxiv_id, item.title || "", item.abstract || "",
       JSON.stringify(item.authors || []), JSON.stringify(item.categories || []),
+      JSON.stringify(item.affiliations || []), JSON.stringify(item.corresponding_authors || []),
       item.published_date || null, item.arxiv_url || `https://arxiv.org/abs/${item.arxiv_id}`,
       item.pdf_url || null, Number(item.score || 0), item.reason || "", item.tldr || "",
       item.ai_summary || "", item.title_zh || "", item.abstract_zh || "", item.core_contribution || "",

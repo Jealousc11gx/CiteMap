@@ -186,15 +186,17 @@ def upsert_radar_candidate(conn: sqlite3.Connection, candidate: dict) -> dict:
     conn.execute(
         """
         INSERT INTO radar_candidates (
-            id, arxiv_id, title, abstract, authors, categories, published_date,
+            id, arxiv_id, title, abstract, authors, categories, affiliations, corresponding_authors, published_date,
             updated_date, arxiv_url, pdf_url, tldr, ai_summary, title_zh,
             abstract_zh, core_contribution, method, result, limitations
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(arxiv_id) DO UPDATE SET
             title=excluded.title,
             abstract=excluded.abstract,
             authors=excluded.authors,
             categories=excluded.categories,
+            affiliations=excluded.affiliations,
+            corresponding_authors=excluded.corresponding_authors,
             published_date=excluded.published_date,
             updated_date=excluded.updated_date,
             arxiv_url=excluded.arxiv_url,
@@ -215,6 +217,8 @@ def upsert_radar_candidate(conn: sqlite3.Connection, candidate: dict) -> dict:
             candidate.get("abstract", ""),
             _json(candidate.get("authors") or []),
             _json(candidate.get("categories") or []),
+            _json(candidate.get("affiliations") or []),
+            _json(candidate.get("corresponding_authors") or []),
             candidate.get("published_date"),
             candidate.get("updated_date"),
             candidate.get("arxiv_url") or f"https://arxiv.org/abs/{arxiv_id}",
@@ -253,6 +257,7 @@ def upsert_radar_match(
     row = conn.execute(
         """
         SELECT rm.*, rc.arxiv_id, rc.title, rc.abstract, rc.authors, rc.categories,
+               rc.affiliations, rc.corresponding_authors,
                rc.published_date, rc.updated_date, rc.arxiv_url, rc.pdf_url,
                rc.tldr, rc.ai_summary, rc.title_zh, rc.abstract_zh, rc.core_contribution,
                rc.method, rc.result, rc.limitations
@@ -277,6 +282,7 @@ def list_radar_matches(
         raise ValueError("无效的雷达状态")
     sql = """
         SELECT rm.*, rc.arxiv_id, rc.title, rc.abstract, rc.authors, rc.categories,
+               rc.affiliations, rc.corresponding_authors,
                rc.published_date, rc.updated_date, rc.arxiv_url, rc.pdf_url,
                rc.tldr, rc.ai_summary, rc.title_zh, rc.abstract_zh, rc.core_contribution,
                rc.method, rc.result, rc.limitations
@@ -292,8 +298,8 @@ def list_radar_matches(
     params.append(limit)
     rows = [dict(row) for row in conn.execute(sql, params).fetchall()]
     for row in rows:
-        row["authors"] = _loads(row.get("authors"), [])
-        row["categories"] = _loads(row.get("categories"), [])
+        for field in ("authors", "categories", "affiliations", "corresponding_authors"):
+            row[field] = _loads(row.get(field), [])
     return rows
 
 

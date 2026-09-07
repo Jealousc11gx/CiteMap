@@ -45,4 +45,3 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX IF NOT EXISTS idx_items_project ON items(project_id);
 CREATE INDEX IF NOT EXISTS idx_events_project_event ON events(project_id, event_id);
-
