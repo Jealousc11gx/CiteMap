@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Radar as RadarIcon, RefreshCw, Save, Settings2, X } from "lucide-react";
+import { CheckCircle2, ExternalLink, Radar as RadarIcon, RefreshCw, Save, Settings2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useProject } from "@/contexts/ProjectContext";
 import { fetchRadarConfig, fetchRadarMatches, scanRadar, syncRadar, updateRadarConfig, updateRadarMatch } from "@/services/api";
 import type { RadarConfig, RadarMatch, RadarState } from "@/types";
-import { RADAR_SETUP_COMPLETE_KEY } from "@/pages/RadarSettings";
-import { RADAR_CLOUD_SETUP_COMPLETE_KEY } from "@/pages/RadarCloudSettings";
 
 const EMPTY_CONFIG: Omit<RadarConfig, "project_id" | "updated_at"> = {
   enabled: false,
@@ -26,6 +23,37 @@ const EMPTY_CONFIG: Omit<RadarConfig, "project_id" | "updated_at"> = {
   compute_mode: "cloud",
 };
 const AUTO_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const RADAR_CONNECTION_KEY = "citemap.radar.connection.v1";
+const RADAR_DEPLOYMENT_GUIDE_URL = "https://github.com/Jealousc11gx/CiteMap/blob/main/docs/radar-github-action-setup.md";
+
+type RadarConnection = {
+  remoteUrl: string;
+  remoteToken: string;
+};
+
+function loadRadarConnection(): RadarConnection {
+  try {
+    const connection = JSON.parse(localStorage.getItem(RADAR_CONNECTION_KEY) || "{}");
+    const legacy = JSON.parse(localStorage.getItem("citemap.radar.setup.v1") || "{}");
+    return {
+      remoteUrl: connection.remote_url || legacy.remote_url || localStorage.getItem("citemap.radar.remoteUrl") || "",
+      remoteToken: connection.remote_token || legacy.remote_token || "",
+    };
+  } catch {
+    return {
+      remoteUrl: localStorage.getItem("citemap.radar.remoteUrl") || "",
+      remoteToken: "",
+    };
+  }
+}
+
+function saveRadarConnection(remoteUrl: string, remoteToken: string) {
+  localStorage.setItem(RADAR_CONNECTION_KEY, JSON.stringify({
+    remote_url: remoteUrl,
+    remote_token: remoteToken,
+  }));
+  localStorage.setItem("citemap.radar.remoteUrl", remoteUrl);
+}
 
 function splitValues(value: string) {
   return value.split(/[\n,，]/).map((item) => item.trim()).filter(Boolean);
@@ -69,7 +97,6 @@ function RadarCard({ match, onState }: { match: RadarMatch; onState: (match: Rad
 
 export function Radar() {
   const { activeProject } = useProject();
-  const navigate = useNavigate();
   const projectId = activeProject?.id;
   const [config, setConfig] = useState(EMPTY_CONFIG);
   const [matches, setMatches] = useState<RadarMatch[]>([]);
@@ -79,15 +106,15 @@ export function Radar() {
   const [savingConfig, setSavingConfig] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [remoteUrl, setRemoteUrl] = useState(() => { try { return JSON.parse(localStorage.getItem("citemap.radar.setup.v1") || "{}").remote_url || localStorage.getItem("citemap.radar.remoteUrl") || ""; } catch { return localStorage.getItem("citemap.radar.remoteUrl") || ""; } });
-  const [remoteToken, setRemoteToken] = useState(() => { try { return JSON.parse(localStorage.getItem("citemap.radar.setup.v1") || "{}").remote_token || ""; } catch { return ""; } });
+  const [notice, setNotice] = useState<string | null>(null);
+  const [remoteUrl, setRemoteUrl] = useState(() => loadRadarConnection().remoteUrl);
+  const [remoteToken, setRemoteToken] = useState(() => loadRadarConnection().remoteToken);
+  const [connectionSaved, setConnectionSaved] = useState(() => {
+    const connection = loadRadarConnection();
+    return Boolean(connection.remoteUrl && connection.remoteToken);
+  });
   const [syncing, setSyncing] = useState(false);
   const autoSynced = useRef(new Set<string>());
-
-  useEffect(() => {
-    if (localStorage.getItem(RADAR_SETUP_COMPLETE_KEY) !== "true") navigate("/settings/radar", { replace: true });
-    else if (localStorage.getItem(RADAR_CLOUD_SETUP_COMPLETE_KEY) !== "true") navigate("/settings/radar/cloud", { replace: true });
-  }, [navigate]);
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -107,7 +134,7 @@ export function Radar() {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    if (!projectId || !remoteUrl.trim() || !remoteToken.trim()) return;
+    if (!connectionSaved || !projectId || !remoteUrl.trim() || !remoteToken.trim()) return;
     const key = `${projectId}:${remoteUrl.trim()}`;
     if (autoSynced.current.has(key)) return;
     const storageKey = `citemap.radar.lastAutoSync:${key}`;
@@ -124,7 +151,7 @@ export function Radar() {
         setError(err instanceof Error ? err.message : String(err));
       })
       .finally(() => setSyncing(false));
-  }, [load, projectId, remoteToken, remoteUrl]);
+  }, [connectionSaved, load, projectId, remoteToken, remoteUrl]);
 
   const filtered = useMemo(() => tab === "all" ? matches : matches.filter((match) => match.state === tab), [matches, tab]);
 
@@ -135,7 +162,7 @@ export function Radar() {
       const updated = await updateRadarConfig(projectId, config);
       setConfig(updated);
       setShowSettings(false);
-      if (remoteUrl.trim() && remoteToken.trim()) {
+      if (connectionSaved && remoteUrl.trim() && remoteToken.trim()) {
         syncRadar(projectId, remoteUrl.trim(), remoteToken.trim()).catch((err) => {
           setError(err instanceof Error ? err.message : String(err));
         });
@@ -153,11 +180,11 @@ export function Radar() {
     setError(null);
     try {
       if (config.compute_mode === "cloud") {
-        if (!remoteUrl.trim() || !remoteToken.trim()) throw new Error("请先在云端配置中填写 Worker URL 和 RADAR_TOKEN");
+        if (!connectionSaved || !remoteUrl.trim() || !remoteToken.trim()) throw new Error("请先连接 Worker，再同步云端推荐");
         await syncRadar(projectId, remoteUrl.trim(), remoteToken.trim());
       } else if (config.compute_mode === "hybrid") {
         try {
-          if (!remoteUrl.trim() || !remoteToken.trim()) throw new Error("未配置云端连接");
+          if (!connectionSaved || !remoteUrl.trim() || !remoteToken.trim()) throw new Error("未配置云端连接");
           await syncRadar(projectId, remoteUrl.trim(), remoteToken.trim());
         } catch {
           await scanRadar(projectId);
@@ -174,15 +201,19 @@ export function Radar() {
   };
 
   const runSync = async () => {
+    if (!projectId) return;
     if (!remoteUrl.trim() || !remoteToken.trim()) {
-      setError("请先填写远端 Radar Store URL 和 token");
+      setError("请填写 Worker URL 和 RADAR_TOKEN");
       return;
     }
     setSyncing(true);
     setError(null);
+    setNotice(null);
     try {
-      localStorage.setItem("citemap.radar.remoteUrl", remoteUrl.trim());
       await syncRadar(projectId, remoteUrl.trim(), remoteToken.trim(), true);
+      saveRadarConnection(remoteUrl.trim(), remoteToken.trim());
+      setConnectionSaved(true);
+      setNotice("Worker 已连接，项目画像与云端推荐已同步。");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -195,7 +226,7 @@ export function Radar() {
     try {
       const updated = await updateRadarMatch(match.id, state);
       setMatches((items) => items.map((item) => item.id === match.id ? { ...item, ...updated } : item));
-      if (projectId && remoteUrl.trim() && remoteToken.trim()) {
+      if (connectionSaved && projectId && remoteUrl.trim() && remoteToken.trim()) {
         syncRadar(projectId, remoteUrl.trim(), remoteToken.trim()).catch((err) => {
           setError(err instanceof Error ? err.message : String(err));
         });
@@ -220,6 +251,25 @@ export function Radar() {
         </div>
       </div>
       {error && <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
+      {notice && <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm text-primary" role="status"><CheckCircle2 className="h-4 w-4 shrink-0" />{notice}</div>}
+      {!connectionSaved && !showSettings && (
+        <section className="border-y bg-muted/30 px-4 py-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm font-semibold">连接云端雷达</h2>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">Fork 仓库并完成 GitHub Actions 部署后，在此连接 Worker。模型、SMTP、Cloudflare 凭据只配置在 GitHub。</p>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <label className="space-y-1.5 text-xs font-medium"><span>Worker URL</span><Input value={remoteUrl} onChange={(event) => setRemoteUrl(event.target.value)} placeholder="https://citemap-radar.example.workers.dev" /></label>
+                <label className="space-y-1.5 text-xs font-medium"><span>RADAR_TOKEN</span><Input type="password" value={remoteToken} onChange={(event) => setRemoteToken(event.target.value)} placeholder="与 GitHub Secret 相同" /></label>
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button variant="outline" asChild><a href={RADAR_DEPLOYMENT_GUIDE_URL} target="_blank" rel="noreferrer">部署文档<ExternalLink className="ml-2 h-4 w-4" /></a></Button>
+              <Button onClick={runSync} disabled={syncing}>{syncing ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : null}{syncing ? "连接中" : "连接并发布画像"}</Button>
+            </div>
+          </div>
+        </section>
+      )}
       {showSettings && (
         <section className="space-y-4 rounded-xl border bg-card p-4">
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={config.enabled} onChange={(event) => setConfig({ ...config, enabled: event.target.checked })} />启用当前项目雷达</label>
@@ -232,13 +282,15 @@ export function Radar() {
           </div>
           <label className="block space-y-1 text-sm"><span>项目研究目标补充</span><Textarea value={config.profile_override} onChange={(event) => setConfig({ ...config, profile_override: event.target.value })} placeholder="描述项目关注的研究问题" /></label>
           <div className="border-t pt-4">
-            <p className="mb-2 text-sm font-medium">远端雷达同步</p>
-            <p className="mb-3 text-xs text-muted-foreground">用于电脑关闭期间保存每日推荐、邮件点击状态。Token 保存在当前浏览器的本地配置中，不写入 CiteMap 数据库。</p>
-            <div className="grid gap-3 md:grid-cols-2">
-              <Input value={remoteUrl} onChange={(event) => setRemoteUrl(event.target.value)} placeholder="https://your-radar-worker.example.com" />
-              <Input type="password" value={remoteToken} onChange={(event) => setRemoteToken(event.target.value)} placeholder="Radar Store token" />
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div><p className="text-sm font-medium">云端连接</p><p className="mt-1 text-xs text-muted-foreground">这里只保存 Worker URL、RADAR_TOKEN。Actions 的模型、邮件、Cloudflare 配置不在本地管理。</p></div>
+              <Button variant="ghost" size="sm" asChild><a href={RADAR_DEPLOYMENT_GUIDE_URL} target="_blank" rel="noreferrer">部署文档<ExternalLink className="ml-2 h-3.5 w-3.5" /></a></Button>
             </div>
-            <Button variant="outline" className="mt-3" onClick={runSync} disabled={syncing}>{syncing ? "同步中…" : "同步远端历史并发布项目画像"}</Button>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="space-y-1.5 text-xs font-medium"><span>Worker URL</span><Input value={remoteUrl} onChange={(event) => { setRemoteUrl(event.target.value); setConnectionSaved(false); }} placeholder="https://citemap-radar.example.workers.dev" /></label>
+              <label className="space-y-1.5 text-xs font-medium"><span>RADAR_TOKEN</span><Input type="password" value={remoteToken} onChange={(event) => { setRemoteToken(event.target.value); setConnectionSaved(false); }} placeholder="与 GitHub Secret 相同" /></label>
+            </div>
+            <Button variant="outline" className="mt-3" onClick={runSync} disabled={syncing}>{syncing ? "连接中…" : connectionSaved ? "重新同步并发布画像" : "保存连接并发布画像"}</Button>
           </div>
           <Button onClick={saveConfig} disabled={savingConfig}>{savingConfig ? "保存中…" : "保存设置"}</Button>
         </section>

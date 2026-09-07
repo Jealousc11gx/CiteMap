@@ -51,6 +51,7 @@ npm run dev -- --port 3000
 CiteMap 是一套面向个人研究的论文管理工具，覆盖从论文发现到知识沉淀的完整工作流：
 
 - **发现**：对话式 AI 搜索或关键词检索 arXiv
+- **雷达**：GitHub Actions 每日计算相似度、生成中文摘要并发送邮件；本地同步结果与阅读状态
 - **评估**：浏览论文元数据，查看 PDF 状态，决定是否入库
 - **入库**：支持 arXiv ID 入库、搜索结果入库、本地 PDF 上传
 - **分析**：交互式知识图谱（团队视图 / 论文视图）+ 智能聊天
@@ -175,6 +176,13 @@ CiteMap/
 - 笔记与 PDF 路径绑定
 - 支持 frontmatter 元数据
 - 支持 `[[wikilink]]` 关联其他论文
+
+### 论文雷达
+
+- Fork 后通过 GitHub Actions 运行，无需本机持续在线
+- Cloudflare Worker + D1 保存项目画像、推荐结果、邮件状态
+- 本地只填写 Worker URL、`RADAR_TOKEN`，不配置模型、SMTP、Cloudflare 凭据
+- 部署步骤见 [GitHub Actions 论文雷达部署](docs/radar-github-action-setup.md)
 
 ---
 

@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Dashboard } from "@/pages/Dashboard";
 import { Papers } from "@/pages/Papers";
@@ -8,8 +8,6 @@ import { Chat } from "@/pages/Chat";
 import { PaperDetail } from "@/pages/PaperDetail";
 import { Notes } from "@/pages/Notes";
 import { Radar } from "@/pages/Radar";
-import { RadarSettings } from "@/pages/RadarSettings";
-import { RadarCloudSettings } from "@/pages/RadarCloudSettings";
 import { ProjectProvider } from "@/contexts/ProjectContext";
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
@@ -50,8 +48,8 @@ function App() {
             <Route path="/chat" element={<Chat />} />
             <Route path="/notes" element={<Notes />} />
             <Route path="/radar" element={<Radar />} />
-            <Route path="/settings/radar" element={<RadarSettings />} />
-            <Route path="/settings/radar/cloud" element={<RadarCloudSettings />} />
+            <Route path="/settings/radar" element={<Navigate to="/radar" replace />} />
+            <Route path="/settings/radar/cloud" element={<Navigate to="/radar" replace />} />
           </Route>
         </Routes>
       </ProjectProvider>

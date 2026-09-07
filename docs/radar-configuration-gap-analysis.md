@@ -50,21 +50,21 @@ CiteMap Action 需要：
 
 | 能力 | 当前状态 | 是否需要补全 |
 |---|---|---|
-| LLM API 读取 | 只读 `.env` | 是，需页面保存、脱敏、测试 |
-| LLM model list | 已有 `/api/llm/models` | 需接入配置页 |
-| embedding provider | 环境变量读取 | 是，需 provider/model/API 测试 |
+| LLM API 读取 | Action 读取 GitHub Secrets/Variables | 云端配置完成 |
+| LLM model list | GitHub Variable `LLM_MODEL` | 用户填写 API 支持的模型 |
+| embedding provider | Action 读取 GitHub Secrets/Variables | 云端配置完成 |
 | lexical fallback | 已有 | 仅保留为开发 fallback |
 | local SentenceTransformer | 已接入 | 默认复用 daily arxiv 模型；Action 需要缓存 |
-| SMTP 发送 | Action 代码已有 | 是，需 SMTP 连接测试、测试邮件 |
-| Worker URL/token | 雷达页面手填 | 是，需健康检查、脱敏保存 |
-| profile 发布 | API 已有 | 需配置页按钮和结果展示 |
-| GitHub Secrets | workflow 已有 | 未实现页面配置 |
-| GitHub workflow 状态 | 未实现 | 后续完整向导补全 |
-| Cloudflare D1 创建 | 未实现 | 后续部署向导补全 |
+| SMTP 发送 | Action 代码、测试 workflow 已有 | 通过 `CiteMap Radar Test` 验证 |
+| Worker URL/token | 雷达页单一连接表单 | 连接时通过同步请求验证 |
+| profile 发布 | 雷达页连接、保存项目配置时发布 | 已实现 |
+| GitHub Secrets | workflow 已有 | 用户在 Fork 的 GitHub Settings 配置 |
+| GitHub workflow 状态 | GitHub Actions 页面 | 本地前端不代理 GitHub 管理操作 |
+| Cloudflare D1 创建 | Cloudflare Dashboard | 首次部署前创建一次 |
 
-## 第一版简化配置页
+## 当前配置边界
 
-先模仿 daily arxiv 的配置结构，字段分组：
+云端配置沿用 daily arxiv 的职责分组：
 
 ```text
 Zotero corpus → CiteMap project profile
@@ -75,19 +75,16 @@ email → SMTP sender/receiver
 executor → top_k、schedule、enabled
 ```
 
-第一版只做：
+GitHub 管理：
 
-- 浏览器 localStorage 保存表单草稿。
-- 展示当前配置状态。
-- 生成 GitHub Actions Secrets/Variables 清单。
-- 一键复制清单。
-- 链接到 GitHub Actions 设置页面。
+- Cloudflare、LLM、embedding、SMTP Secrets/Variables。
+- Worker deployment、D1 migration、雷达定时任务。
+- 测试 workflow、运行日志。
 
-不做：
+本地 CiteMap 管理：
 
-- 自动写 GitHub Secrets。
-- 自动创建 Cloudflare D1。
-- 自动部署 Worker。
-- 在页面明文回显已保存 Secret。
+- 项目 categories、关键词、阈值、启用状态。
+- Worker URL、`RADAR_TOKEN` 连接。
+- profile 发布、推荐与阅读状态同步。
 
-完整配置向导再补：本地安全存储、SMTP 测试、embedding 测试、Worker health、GitHub CLI/OAuth、Action 状态。当前配置页已生成 daily arxiv 本地模型的 Action 参数。
+不再实现本地 Cloudflare/SMTP/模型向导。Fork 用户在 GitHub Secrets/Variables 配置云端参数；本地雷达页只连接 Worker、发布 profile、同步结果与状态。

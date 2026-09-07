@@ -1,99 +1,54 @@
-# GitHub Actions 论文雷达配置
+# GitHub Actions 论文雷达部署
 
-## 1. 前置条件
+论文抓取、相似度排序、AI 摘要、邮件发送由 GitHub Actions 执行。Cloudflare Worker + D1 保存项目画像、推荐结果、邮件状态。本地 CiteMap 只同步云端数据、发布项目画像。
 
-Action 不读取本机 `data/papers.db`。电脑关闭时，Action 依赖两个远端配置：
+Windows、macOS、Linux 使用相同云端配置。本机不需要安装 Wrangler，不需要复制 Worker JS 或 D1 SQL。
 
-1. Cloudflare Worker + D1 保存 profile、推荐、邮件状态。
-2. GitHub Actions Secrets/Variables 保存 Worker、SMTP、模型配置。
+## 1. Fork 仓库
 
-首次打开 CiteMap 的 `/radar` 页面时，会自动跳转到 `/settings/radar` 配置向导。向导按“模型 → 邮件 → Worker/D1 → GitHub Action → 完成”分步保存草稿，配置完成标记保存在当前浏览器。它不会自动写入 GitHub Secrets。
+Fork `Jealousc11gx/CiteMap`。后续 Secrets、Variables、Actions 均在自己的 Fork 中配置。
 
-当前仓库为 `Jealousc11gx/CiteMap`。
+不要把真实 Token、API Key、邮箱授权码提交到仓库。
 
-## GitHub Actions CI/CD
+## 2. 创建 D1
 
-仓库包含三类自动化：
+在 Cloudflare Dashboard 创建一个名为 `citemap-radar` 的 D1 database，记录 Database ID。
 
-- `ci.yml`：push、PR 时运行后端 pytest、前端 Vitest/build、Worker 语法检查。
-- `deploy-radar-worker.yml`：`radar-worker/**` 变化时应用 D1 migrations、部署 Worker。
-- `radar.yml`、`radar-test.yml`：执行论文雷达计算、AI 摘要与邮件发送。
+D1 只需创建一次。无需克隆 Cloudflare 模板。无需手动执行 `schema.sql`。`Deploy Radar Worker` 会自动应用仓库中的 migrations。
 
-Worker 自动部署需要在 GitHub Actions Secrets 配置：
+## 3. 配置 GitHub Secrets
+
+打开自己的 Fork：`Settings → Secrets and variables → Actions → Secrets`。
+
+### Worker 部署必需
 
 | Name | 内容 |
 |---|---|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API Token，需要 Workers Scripts Edit、D1 Edit 权限 |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API Token，需 Workers Scripts Edit、D1 Edit 权限 |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Account ID |
-| `CLOUDFLARE_D1_DATABASE_ID` | 已创建的 CiteMap D1 database ID |
+| `CLOUDFLARE_D1_DATABASE_ID` | 第 2 步创建的 D1 Database ID |
+| `RADAR_REMOTE_TOKEN` | 自行生成的长随机 Token；同时作为 Worker 的 `RADAR_TOKEN` |
 
-`deploy-radar-worker.yml` 会临时生成 `wrangler.ci.toml`。D1 ID 不写入仓库。部署时会把 GitHub Secret `RADAR_REMOTE_TOKEN` 自动写成 Worker Secret `RADAR_TOKEN`，随后调用 `/health` 验证 Worker、Token、D1 binding。
-
-旧 D1 缺少 AI 字段时，部署 workflow 会检测 `items` 表并自动执行 `0003_add_ai_fields.sql`。以后只需提交新的受管 migration，不需要在本地运行 Wrangler。
-
-## 2. 部署 Worker
-
-Cloudflare 配置属于远端实例，与 Windows、macOS、Linux 无关。推荐使用 Dashboard 创建 D1，再由 GitHub Actions 部署 Worker，不需要在本地安装 Wrangler：
-
-1. 在 Cloudflare Dashboard 创建名为 `citemap-radar` 的 D1 数据库，记录 Database ID。
-2. 在 GitHub 配置 Cloudflare、Radar Store、SMTP、LLM Secrets/Variables。
-3. 手动运行 `Deploy Radar Worker`；workflow 自动应用 D1 migration、部署 Worker、写入 `RADAR_TOKEN`。
-4. 记录 `workers.dev` URL，将其保存为 GitHub Secret `RADAR_REMOTE_URL` 后重新运行部署健康检查。
-
-已有 Worker 时，直接把现有 URL 写入 `RADAR_REMOTE_URL`。第一次创建 Worker、尚不知道最终 URL 时，可先部署一次，再补 URL 并重新运行 workflow。
-
-不需要为 Worker + D1 单独配置域名。Cloudflare 会提供 `https://<worker-name>.<subdomain>.workers.dev`，CiteMap 可直接使用。自定义域名仅在需要品牌入口或已有 Cloudflare Zone 时配置，D1 本身没有域名。
-
-Cloudflare Dashboard 的 D1「克隆存储库」模板不是必需项。CiteMap 使用仓库内的 `radar-worker/schema.sql`，向导提供复制按钮，可直接粘贴到 Worker 编辑器与 D1 Console。
-
-也可以由维护者使用 Wrangler 部署。`database_id`、Worker URL、`RADAR_TOKEN` 属于具体 Cloudflare 实例，不要写入公共示例配置或提交到仓库。
-
-如果 D1 已经按旧 schema 部署，使用 Cloudflare D1 控制台执行一次迁移：
-
-```bash
-npx wrangler d1 execute citemap-radar --remote --file=migrations/0002_add_tldr.sql
-```
-
-已经创建过 D1 的用户还需要在 D1 Console 执行 `radar-worker/migrations/0003_add_ai_fields.sql`，用于保存云端生成的中文标题、TLDR、AI 摘要、核心贡献、方法、结果、局限性。完成迁移后，重新复制并部署最新的 `radar-worker/src/index.js`。
-
-云端优先模式的数据流：
-
-```text
-GitHub Action → arXiv / embedding / LLM → Worker + D1
-CiteMap 本地 ← 同步推荐、AI 字段、已读/收藏/忽略状态
-```
-
-本地默认不重复计算。雷达设置中的 `local` 仅用于开发或云端故障时手动备用；`hybrid` 会先同步云端，同步失败后再进行本地计算。
-
-部署完成后得到：
-
-```text
-https://citemap-radar.<你的 Cloudflare 子域>.workers.dev
-```
-
-## 3. GitHub Secrets
-
-仓库页面：`Settings → Secrets and variables → Actions → New repository secret`
-
-创建以下 Secrets：
+### 每日雷达必需
 
 | Name | 内容 |
 |---|---|
-| `RADAR_REMOTE_URL` | Worker URL，例如 `https://citemap-radar.xxx.workers.dev` |
-| `RADAR_REMOTE_TOKEN` | 与 Worker 的 `RADAR_TOKEN` 完全相同 |
+| `RADAR_REMOTE_URL` | 部署后得到的 Worker URL |
+| `RADAR_REMOTE_TOKEN` | 与上表相同 |
 | `RADAR_EMAIL_SENDER` | 发件邮箱 |
 | `RADAR_EMAIL_RECEIVER` | 收件邮箱 |
 | `RADAR_EMAIL_PASSWORD` | SMTP 授权码或 App Password，不是登录密码 |
-| `RADAR_EMBEDDING_API_KEY` | 仅 API embedding provider 需要，本地模型留空 |
-| `LLM_API_KEY` | Action 用于生成论文 TLDR |
+| `LLM_API_KEY` | 生成中文标题、TLDR、AI 摘要 |
 
-## 4. GitHub Variables
+使用 API embedding provider 时，再添加 `RADAR_EMBEDDING_API_KEY`。默认本地 embedding 模型不需要该 Secret。
 
-同一页面切换到 `Variables`，创建：
+## 4. 配置 GitHub Variables
+
+打开：`Settings → Secrets and variables → Actions → Variables`。
 
 | Name | 推荐值 |
 |---|---|
-| `RADAR_SMTP_HOST` | 例如 `smtp.qq.com`、`smtp.gmail.com` |
+| `RADAR_SMTP_HOST` | `smtp.qq.com`、`smtp.gmail.com` 等 |
 | `RADAR_SMTP_PORT` | `465` |
 | `RADAR_EMBEDDING_PROVIDER` | `local` |
 | `RADAR_EMBEDDING_MODEL` | `jinaai/jina-embeddings-v5-text-nano-retrieval` |
@@ -101,114 +56,84 @@ https://citemap-radar.<你的 Cloudflare 子域>.workers.dev
 | `RADAR_EMBEDDING_PROMPT_NAME` | `document` |
 | `RADAR_EMBEDDING_TRUST_REMOTE_CODE` | `true` |
 | `RADAR_EMBEDDING_BATCH_SIZE` | `64` |
-| `RADAR_DEBUG` | `false` |
 | `RADAR_LLM_ENABLED` | `true` |
 | `RADAR_LLM_REQUIRED` | `true` |
-| `LLM_BASE_URL` | `https://api.openai.com/v1` |
-| `LLM_MODEL` | `gpt-4o-mini` |
-| `RADAR_SCHEDULE_UTC` | 记录当前计划时间；实际 cron 由 workflow 文件控制 |
+| `LLM_BASE_URL` | OpenAI-compatible API Base URL |
+| `LLM_MODEL` | API 实际支持的模型名 |
+| `RADAR_DEBUG` | `false` |
 
-以上模型变量均有 workflow 默认值，不创建也可以运行。建议显式创建，便于以后改模型。
+Embedding 相关 Variables 已有 workflow 默认值。SMTP Host、LLM Base URL、LLM Model 建议显式填写。
 
-正式 workflow 与测试 workflow 默认都使用 `RADAR_LLM_REQUIRED=true`。LLM 未生成 `tldr` 或 `ai_summary` 时任务失败，不会发送缺少 AI 内容的推荐邮件。需要显式降级时再将该 Variable 改为 `false`。
+## 5. 部署 Worker
 
-完整等价配置快照由云端配置向导生成，内容对应 daily arxiv 的 `email`、`embedding/reranker`、`llm`、`executor`、`remote` 分组。CiteMap 当前不需要 `ZOTERO_ID`、`ZOTERO_KEY`，因为 reference papers 来自本地项目并发布到 Worker。
+打开：`Actions → Deploy Radar Worker → Run workflow`。
 
-## 5. 发布项目 profile
+该 workflow 自动完成：
 
-Action 的 profile 来源不是本地 SQLite。CiteMap 应用打开、网络可用时，在雷达同步操作中发布 profile：
+1. 生成仅用于 CI 的 Wrangler 配置。
+2. 应用 D1 migrations。
+3. 部署最新 Worker。
+4. 写入 Worker Secret `RADAR_TOKEN`。
+5. 请求 `/health` 验证部署。
+
+从部署日志记录 URL，例如：
 
 ```text
-本地应用 → 雷达 → 配置项目 → 保存 → 同步/发布 profile
+https://citemap-radar.<Cloudflare 子域>.workers.dev
 ```
 
-每个启用雷达的普通项目应至少配置：
+将 URL 添加为 GitHub Secret `RADAR_REMOTE_URL`。不需要为 Worker 或 D1 配置自定义域名。
+
+以后修改 `radar-worker/**` 并 push 到 `main`，workflow 会自动迁移 D1、重新部署 Worker。本地无需运行 Cloudflare 命令。
+
+## 6. 连接本地 CiteMap
+
+启动 CiteMap，打开“雷达”。本地前端不再提供 Cloudflare、模型、SMTP 配置向导。
+
+首次连接只填写：
+
+- `Worker URL`：`RADAR_REMOTE_URL`
+- `RADAR_TOKEN`：`RADAR_REMOTE_TOKEN`
+
+点击“连接并发布画像”。连接成功后，URL、Token 保存在当前浏览器 localStorage，不写入 SQLite，不上传到 GitHub。进入雷达页时，同一项目、同一 Worker 在当前浏览器会话内最多每 5 分钟自动同步一次。
+
+每个启用雷达的项目至少配置：
 
 - arXiv categories
 - `top_k`
 - `min_score`
 - 至少一篇项目 reference paper
-- 可选 anchor paper
 
-Worker 中可用以下接口确认 profile 已存在：
-
-```bash
-curl -H "Authorization: Bearer <RADAR_TOKEN>" \
-  "https://citemap-radar.<域名>.workers.dev/profiles"
-```
-
-## 6. 手动运行 Action
-
-仓库页面：`Actions → CiteMap Radar → Run workflow`
-
-第一次建议手动运行。确认顺序：
-
-1. `profiles` 能返回启用项目。
-2. arXiv 能获取候选。
-3. Hugging Face 模型下载完成。
-4. SMTP 发送成功。
-5. Worker 的 item 出现 `emailed_at`。
-
-模型首次下载较慢。workflow 已缓存：
+数据流：
 
 ```text
-~/.cache/huggingface
-~/.cache/torch
-~/.cache/sentence_transformers
+GitHub Actions → arXiv / embedding / LLM → Worker + D1
+CiteMap → 发布项目画像 → Worker + D1
+CiteMap ← 推荐、AI 字段、已读/收藏/忽略状态 ← Worker + D1
 ```
 
-后续运行会复用 cache。Action 重跑不会重复创建 item，也不会重复发送已标记 `emailed_at` 的论文。
+## 7. 验证完整流程
 
-另有独立测试 workflow：
+首次运行使用：`Actions → CiteMap Radar Test → Run workflow`。
 
-```text
-Actions → CiteMap Radar Test → Run workflow
-```
+测试 workflow 会使用历史日期，最多获取 5 篇候选、发送 3 篇，适合验证非 arXiv 发布日场景。检查：
 
-测试 workflow 固定最多获取 5 篇候选、最多发送 3 篇，开启 debug、LLM TLDR，发送真实测试邮件。
+1. Action 成功读取 profile。
+2. embedding 完成相似度排序。
+3. LLM 返回中文 TLDR、AI 摘要。
+4. SMTP 发送邮件。
+5. Worker D1 保存推荐与 `emailed_at`。
+6. CiteMap 雷达页同步到推荐；邮件点击产生的已读状态可回到本地。
 
-`include_cross_list`、`send_empty`、`fetch_limit`、`debug` 已进入项目 profile，项目配置页可直接调整。
+验证完成后，可手动运行 `CiteMap Radar`。正式 workflow 每日 UTC `22:00` 自动执行，即北京时间次日 `06:00`。
 
-## 7. 当前完整测试结果
+## 8. CI/CD 边界
 
-### 自动化测试
+| Workflow | 触发方式 | 职责 |
+|---|---|---|
+| `ci.yml` | push、PR | 后端 pytest、前端 Vitest/build、Worker 语法检查 |
+| `deploy-radar-worker.yml` | Worker 相关文件 push、手动 | D1 migration、Worker deployment、health check |
+| `radar.yml` | schedule、手动 | 每日抓取、排序、AI 摘要、邮件 |
+| `radar-test.yml` | 手动 | 使用少量历史论文验证完整链路 |
 
-```text
-后端 pytest：193 passed
-前端 Vitest：68 passed
-前端 production build：通过
-Worker node --check：通过
-```
-
-### 当前数据库论文测试
-
-`data/papers.db` 当前：
-
-- 22 篇论文
-- 默认项目：21 篇论文
-- `111` 项目：1 篇论文
-
-已使用默认项目的 20 篇论文作为 reference，剩余 2 篇作为 candidate 做完整排序演练。测试只读 SQLite，不发送邮件，不写 Worker。
-
-在当前机器上，lexical fallback 的耗时为：
-
-```text
-20 篇 reference embedding：约 0.0025 秒
-完整排序：约 0.0031 秒
-```
-
-daily arxiv SentenceTransformer 的首次真实测试未完成。原因是 Hugging Face 模型文件下载时网络握手超时，错误发生在模型下载阶段，不是排序代码：
-
-```text
-URLError: <urlopen error EOF occurred in violation of protocol (_ssl.c:1129)>
-```
-
-模型已经开始下载并产生部分 cache。Action 环境通常网络更稳定，首次运行耗时主要取决于模型下载；模型 cache 命中后，20 篇论文的编码与排序会远低于首次下载时间。
-
-## 8. 当前限制
-
-- GitHub CLI 未安装，无法从本机自动写入 GitHub Secrets。
-- 配置页当前生成清单，不直接管理 GitHub Secrets。
-- Worker 必须先部署，Action 才能读取 profile、保存 item、记录邮件状态。
-- `radar.yml` 当前 cron 为 UTC `22:00`，即北京时间次日 `06:00`。
-- 进入雷达页会自动同步，但同一项目和 Worker URL 在当前浏览器会话内按 5 分钟节流；profile 内容未变化时不会重复发布。
+Fork 用户需要自行提供 Cloudflare、LLM、SMTP 凭据。GitHub Actions 不读取本机 `backend/.env` 或 `data/papers.db`。

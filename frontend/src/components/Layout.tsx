@@ -24,7 +24,6 @@ import {
   Waypoints,
   FolderKanban,
   Radar as RadarIcon,
-  Settings2,
   ChevronDown,
   Check,
   Plus,
@@ -39,7 +38,6 @@ const NAV_ITEMS = [
   { path: "/chat", label: "助手", icon: MessageSquareText },
   { path: "/notes", label: "笔记", icon: NotebookPen },
   { path: "/radar", label: "雷达", icon: RadarIcon },
-  { path: "/settings/radar", label: "配置", icon: Settings2 },
 ];
 
 function ThemeToggle() {

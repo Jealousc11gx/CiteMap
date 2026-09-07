@@ -240,17 +240,17 @@ GET  /r/{token}
 
 ### Node 9：配置页和运维体验
 
-状态：已完成简化配置页；完整配置向导待补
+状态：已完成云端部署文档与雷达页连接入口；不再开发本地云端配置向导
 
 范围：
 
 - 项目雷达配置页。
-- LLM、embedding、SMTP 配置。
-- 远端 Radar Store URL、token 配置。
-- 连接测试、测试邮件、最近 Action 状态。
-- profile snapshot 手动查看和同步。
+- LLM、embedding、SMTP 只通过 GitHub Actions Secrets/Variables 配置。
+- 雷达页只保存远端 Radar Store URL、token。
+- 连接请求验证 Worker、token、profile 发布。
+- 测试邮件、Action 状态在 GitHub Actions 页面查看。
 
-Secret 只写入本地安全配置，不在普通读取接口返回明文。当前前端 token 仅保存在页面 state，远端 URL 保存到 localStorage。
+Worker token 与 URL 保存在当前浏览器 localStorage，不进入 SQLite。LLM、SMTP、Cloudflare Secrets 不进入本地前端。
 
 ### Node 10：推荐质量和稳定性验收
 
