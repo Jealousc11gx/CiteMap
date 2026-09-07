@@ -37,6 +37,7 @@ def init_db(db_path: Optional[Path] = None) -> None:
             venue_year INTEGER,
             venue_evidence TEXT,
             venue_checked_at TEXT,
+            venue_source TEXT,
             arxiv_comment TEXT,
             journal_ref TEXT,
             published_date TEXT,
@@ -69,6 +70,7 @@ def init_db(db_path: Optional[Path] = None) -> None:
         ("venue_year", "INTEGER"),
         ("venue_evidence", "TEXT"),
         ("venue_checked_at", "TEXT"),
+        ("venue_source", "TEXT"),
         ("arxiv_comment", "TEXT"),
         ("journal_ref", "TEXT"),
     ):

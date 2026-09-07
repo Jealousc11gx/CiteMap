@@ -4,7 +4,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { fetchPaper, downloadPdf, createNoteTemplate } from "@/services/api";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { fetchPaper, downloadPdf, createNoteTemplate, updatePaperVenue } from "@/services/api";
 import type { Paper } from "@/types";
 import {
   ArrowLeft,
@@ -18,6 +27,7 @@ import {
   Users,
   Sparkles,
   AlertCircle,
+  Pencil,
 } from "lucide-react";
 
 export function PaperDetail() {
@@ -28,6 +38,11 @@ export function PaperDetail() {
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [venueEditorOpen, setVenueEditorOpen] = useState(false);
+  const [venueName, setVenueName] = useState("");
+  const [venueYear, setVenueYear] = useState("");
+  const [venueSaving, setVenueSaving] = useState(false);
+  const [venueError, setVenueError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -78,6 +93,51 @@ export function PaperDetail() {
   const handleViewGraph = () => {
     if (!id) return;
     navigate("/graph", { state: { highlightPaperId: id } });
+  };
+
+  const openVenueEditor = () => {
+    setVenueName(paper?.venue || "");
+    setVenueYear(paper?.venue_year ? String(paper.venue_year) : "");
+    setVenueError(null);
+    setVenueEditorOpen(true);
+  };
+
+  const saveVenue = async () => {
+    if (!id) return;
+    const name = venueName.trim();
+    const year = Number(venueYear);
+    if (!name || !venueYear || !Number.isInteger(year)) {
+      setVenueError("venue 与会议年份必须同时填写");
+      return;
+    }
+    setVenueSaving(true);
+    setVenueError(null);
+    try {
+      setPaper(await updatePaperVenue(id, name, year));
+      setVenueEditorOpen(false);
+      setToast("发表信息已人工确认");
+      setTimeout(() => setToast(null), 3000);
+    } catch (err) {
+      setVenueError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setVenueSaving(false);
+    }
+  };
+
+  const clearVenueOverride = async () => {
+    if (!id) return;
+    setVenueSaving(true);
+    setVenueError(null);
+    try {
+      setPaper(await updatePaperVenue(id, null, null));
+      setVenueEditorOpen(false);
+      setToast("已恢复自动识别");
+      setTimeout(() => setToast(null), 3000);
+    } catch (err) {
+      setVenueError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setVenueSaving(false);
+    }
   };
 
   if (loading) {
@@ -154,6 +214,33 @@ export function PaperDetail() {
         </div>
       )}
 
+      <Dialog open={venueEditorOpen} onOpenChange={setVenueEditorOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>编辑发表信息</DialogTitle>
+            <DialogDescription>人工确认后，智能标注不会覆盖该值。</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-[1fr_8rem] gap-3 py-2">
+            <label className="space-y-1.5 text-sm">
+              <span className="font-medium">Venue</span>
+              <Input value={venueName} onChange={(event) => setVenueName(event.target.value)} placeholder="例如 AAAI" maxLength={80} />
+            </label>
+            <label className="space-y-1.5 text-sm">
+              <span className="font-medium">会议年份</span>
+              <Input value={venueYear} onChange={(event) => setVenueYear(event.target.value)} placeholder="2026" inputMode="numeric" />
+            </label>
+          </div>
+          {venueError && <p className="text-sm text-destructive">{venueError}</p>}
+          <DialogFooter className="justify-between sm:justify-between">
+            <Button variant="ghost" onClick={() => void clearVenueOverride()} disabled={venueSaving || (!paper?.venue && !paper?.venue_source)}>恢复自动识别</Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setVenueEditorOpen(false)} disabled={venueSaving}>取消</Button>
+              <Button onClick={() => void saveVenue()} disabled={venueSaving}>{venueSaving ? "保存中..." : "保存发表信息"}</Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="sm" onClick={() => navigate("/papers")}>
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -168,6 +255,8 @@ export function PaperDetail() {
             {paper.source === "arxiv" ? "arXiv" : "本地"}
           </Badge>
           {paper.venue && <Badge className="text-xs">{paper.venue} {paper.venue_year || ""}</Badge>}
+          {paper.venue_source && <span className="text-xs text-muted-foreground">{paper.venue_source === "manual" ? "人工确认" : "自动识别"}</span>}
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={openVenueEditor}><Pencil className="h-3.5 w-3.5" />{paper.venue ? "编辑 venue" : "添加 venue"}</Button>
           {categories.map((cat, idx) => (
             <Badge key={idx} variant="outline" className="text-xs">
               {cat}

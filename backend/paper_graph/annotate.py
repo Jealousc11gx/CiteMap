@@ -230,11 +230,21 @@ def annotate_paper(paper_id: str, model: Optional[str] = None,
     # 写回数据库
     conn = get_connection(db_path)
     cur = conn.cursor()
+    has_manual_venue = paper.get("venue_source") == "manual"
+    venue_name = paper.get("venue") if has_manual_venue else venue["name"] if venue else None
+    venue_year = paper.get("venue_year") if has_manual_venue else venue["year"] if venue else None
+    venue_evidence = paper.get("venue_evidence") if has_manual_venue else venue["evidence"] if venue else None
+    venue_source = "manual" if has_manual_venue else "automatic" if venue else None
+    result["venue"] = (
+        {"name": venue_name, "year": venue_year, "evidence": venue_evidence}
+        if venue_name else None
+    )
+    result["venue_source"] = venue_source
     cur.execute(
         """
         UPDATE papers
         SET tldr = ?, core_contribution = ?, primary_domain = ?, subfields = ?,
-            venue = ?, venue_year = ?, venue_evidence = ?, venue_checked_at = ?,
+            venue = ?, venue_year = ?, venue_evidence = ?, venue_checked_at = ?, venue_source = ?,
             enhanced_at = ?
         WHERE id = ?
         """,
@@ -243,10 +253,11 @@ def annotate_paper(paper_id: str, model: Optional[str] = None,
             core_contribution,
             primary_domain,
             json.dumps(subfields, ensure_ascii=False),
-            venue["name"] if venue else None,
-            venue["year"] if venue else None,
-            venue["evidence"] if venue else None,
+            venue_name,
+            venue_year,
+            venue_evidence,
             datetime.now().isoformat(),
+            venue_source,
             datetime.now().isoformat(),
             paper_id,
         ),

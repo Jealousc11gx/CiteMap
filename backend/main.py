@@ -5,6 +5,7 @@ import json
 import os
 import sqlite3
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -88,6 +89,11 @@ class PaperSearchRequest(BaseModel):
     query: str
     max_results: int = 10
     download_pdf: bool = False
+
+
+class PaperVenueUpdate(BaseModel):
+    venue: Optional[str] = None
+    venue_year: Optional[int] = None
 
 
 class EnhanceRequest(BaseModel):
@@ -563,6 +569,51 @@ def api_get_paper(paper_id: str):
         if not paper:
             raise HTTPException(status_code=404, detail="论文不存在")
         return hydrate_paper(conn, paper)
+    finally:
+        conn.close()
+
+
+@app.patch("/api/papers/{paper_id}/venue")
+def api_update_paper_venue(paper_id: str, payload: PaperVenueUpdate):
+    """人工修正 venue；人工值优先于后续自动标注。"""
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        paper = get_paper(conn, paper_id)
+        if not paper:
+            raise HTTPException(status_code=404, detail="论文不存在")
+
+        venue = (payload.venue or "").strip()
+        year = payload.venue_year
+        if bool(venue) != (year is not None):
+            raise HTTPException(status_code=422, detail="venue 与 venue_year 必须同时填写或同时清空")
+        if len(venue) > 80:
+            raise HTTPException(status_code=422, detail="venue 最多 80 个字符")
+        if year is not None and not 1900 <= year <= 2100:
+            raise HTTPException(status_code=422, detail="venue_year 必须在 1900 到 2100 之间")
+
+        if venue:
+            conn.execute(
+                """
+                UPDATE papers
+                SET venue = ?, venue_year = ?, venue_evidence = NULL,
+                    venue_checked_at = ?, venue_source = 'manual'
+                WHERE id = ?
+                """,
+                (venue, year, datetime.now().isoformat(), paper_id),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE papers
+                SET venue = NULL, venue_year = NULL, venue_evidence = NULL,
+                    venue_checked_at = NULL, venue_source = NULL
+                WHERE id = ?
+                """,
+                (paper_id,),
+            )
+        conn.commit()
+        return hydrate_paper(conn, get_paper(conn, paper_id))
     finally:
         conn.close()
 

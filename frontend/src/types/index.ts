@@ -7,6 +7,7 @@ export interface Paper {
   venue_year?: number;
   venue_evidence?: string;
   venue_checked_at?: string;
+  venue_source?: "automatic" | "manual";
   categories: string;
   source: "local" | "arxiv";
   arxiv_url?: string;

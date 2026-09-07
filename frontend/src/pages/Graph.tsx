@@ -409,12 +409,12 @@ export function Graph() {
                 </>
               ) : (
                 <>
-                  <span className="flex items-center gap-1.5"><i className="h-0.5 w-5 bg-slate-400" />作者</span>
-                  <span className="flex items-center gap-1.5"><i className="h-0.5 w-5 bg-teal-600 dark:bg-teal-400" />机构</span>
-                  <span className="flex items-center gap-1.5"><i className="h-0.5 w-5 bg-indigo-600 dark:bg-indigo-400" />混合</span>
+                  <span className="flex items-center gap-1.5"><i className="h-0.5 w-5 bg-slate-400" />共同作者</span>
+                  <span className="flex items-center gap-1.5"><i className="h-0.5 w-5 bg-teal-600 dark:bg-teal-400" />共同机构</span>
+                  <span className="flex items-center gap-1.5"><i className="h-0.5 w-5 bg-indigo-600 dark:bg-indigo-400" />两者均有</span>
                 </>
               )}
-              <span>节点大小表示关系强度</span>
+              <span>{view === "paper" ? "距离不表示研究相似度" : "节点大小表示关系强度"}</span>
             </div>
             <div className="absolute bottom-3 right-3 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm">
               节点 {graphStats.nodes} · 关系 {graphStats.edges} · 孤立 {graphStats.isolated}
@@ -442,7 +442,7 @@ export function Graph() {
         setSelectedEdge(null);
       }} className="w-full">
         <div className="flex items-center justify-between gap-4">
-          <TabsList><TabsTrigger value="team">团队视图</TabsTrigger><TabsTrigger value="paper">论文视图</TabsTrigger></TabsList>
+          <TabsList><TabsTrigger value="team">团队视图</TabsTrigger><TabsTrigger value="paper">论文关系</TabsTrigger></TabsList>
           <div className="flex items-center gap-2">
             <div className="relative w-72"><Search className="absolute left-3 top-2 h-4 w-4 text-muted-foreground" /><Input placeholder="搜索标题、作者、机构..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-8 pl-9 pr-16" aria-label="搜索图谱节点" />{searchQuery && <span className="absolute right-2 top-2 text-xs tabular-nums text-muted-foreground">{matchedNodeIds.size} 项</span>}</div>
             {view === "paper" && <select className="h-8 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={yearFilter} onChange={(event) => setYearFilter(event.target.value)} aria-label="按年份筛选"><option value="all">全部年份</option>{years.map((year) => <option key={year} value={year}>{year}</option>)}</select>}

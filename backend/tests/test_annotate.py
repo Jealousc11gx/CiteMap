@@ -44,7 +44,7 @@ def test_init_db_migrates_annotation_schema(tmp_path):
     conn.close()
     assert {
         "tldr", "primary_domain", "subfields", "venue", "venue_year",
-        "venue_evidence", "venue_checked_at", "arxiv_comment", "journal_ref",
+        "venue_evidence", "venue_checked_at", "venue_source", "arxiv_comment", "journal_ref",
     } <= columns
     assert {"tags", "paper_tags"} <= tables
 
@@ -315,6 +315,38 @@ def test_annotate_rejects_venue_without_source_evidence(tmp_db, sample_paper, mo
     assert result["venue"] is None
     assert paper["venue"] is None
     assert paper["venue_checked_at"]
+
+
+def test_annotate_does_not_overwrite_manual_venue(tmp_db, sample_paper, monkeypatch):
+    conn = get_connection(tmp_db)
+    conn.execute(
+        """
+        UPDATE papers
+        SET venue = 'ICLR', venue_year = 2025, venue_source = 'manual',
+            venue_checked_at = '2026-01-01T00:00:00', arxiv_comment = 'Accepted at AAAI 2026'
+        WHERE id = ?
+        """,
+        (sample_paper["id"],),
+    )
+    conn.commit()
+    conn.close()
+    mock_response = MagicMock()
+    mock_response.choices[0].message.content = json.dumps(annotation_payload(
+        venue={"name": "AAAI", "year": 2026, "evidence": "Accepted at AAAI 2026"},
+    ))
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = mock_response
+    monkeypatch.setattr("paper_graph.annotate.get_client", lambda *args, **kwargs: mock_client)
+
+    result = annotate_paper(sample_paper["id"], model="test-model", db_path=tmp_db, force=True)
+
+    conn = get_connection(tmp_db)
+    paper = get_paper(conn, sample_paper["id"])
+    conn.close()
+    assert paper["venue"] == "ICLR"
+    assert paper["venue_year"] == 2025
+    assert paper["venue_source"] == "manual"
+    assert result["venue"]["name"] == "ICLR"
 
 
 def test_force_annotation_replaces_team_links_without_duplicate_authors(tmp_db, sample_paper, monkeypatch):

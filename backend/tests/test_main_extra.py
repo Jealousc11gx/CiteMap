@@ -109,6 +109,68 @@ class TestBatchIngest:
         assert "ingest failed" in data["results"][1]["error"]
 
 
+class TestPaperVenueEndpoint:
+    def test_manual_venue_override_and_clear(self, client):
+        import main as main_module
+
+        conn = get_connection(main_module.DB_PATH)
+        upsert_paper(conn, {
+            "id": "venue-paper",
+            "title": "Venue Paper",
+            "abstract": "Abstract",
+            "published_date": "2025-01-01",
+            "updated_date": "2025-01-01",
+            "categories": "cs.AI",
+            "pdf_path": None,
+            "source": "arxiv",
+            "arxiv_url": "",
+        })
+        conn.commit()
+        conn.close()
+
+        response = client.patch(
+            "/api/papers/venue-paper/venue",
+            json={"venue": "AAAI", "venue_year": 2026},
+        )
+        assert response.status_code == 200
+        assert response.json()["venue"] == "AAAI"
+        assert response.json()["venue_year"] == 2026
+        assert response.json()["venue_source"] == "manual"
+
+        response = client.patch(
+            "/api/papers/venue-paper/venue",
+            json={"venue": None, "venue_year": None},
+        )
+        assert response.status_code == 200
+        assert response.json()["venue"] is None
+        assert response.json()["venue_checked_at"] is None
+        assert response.json()["venue_source"] is None
+
+    def test_rejects_partial_manual_venue(self, client):
+        import main as main_module
+
+        conn = get_connection(main_module.DB_PATH)
+        upsert_paper(conn, {
+            "id": "venue-partial",
+            "title": "Venue Paper",
+            "abstract": "Abstract",
+            "published_date": "2025-01-01",
+            "updated_date": "2025-01-01",
+            "categories": "cs.AI",
+            "pdf_path": None,
+            "source": "arxiv",
+            "arxiv_url": "",
+        })
+        conn.commit()
+        conn.close()
+        response = client.patch(
+            "/api/papers/venue-partial/venue",
+            json={"venue": "AAAI", "venue_year": None},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "venue 与 venue_year 必须同时填写或同时清空"
+
+
 class TestGraphEndpoints:
     def test_graph_team_empty(self, client):
         resp = client.get("/api/graph/team")

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   fetchPapers,
   fetchPaper,
+  updatePaperVenue,
   searchArxivResults,
   batchIngest,
   downloadPdf,
@@ -71,6 +72,23 @@ describe('API services', () => {
       const result = await fetchPaper('1');
       expect(mockFetch).toHaveBeenCalledWith('/api/papers/1');
       expect(result).toEqual({ id: '1', title: 'Test' });
+    });
+  });
+
+  describe('updatePaperVenue', () => {
+    it('should persist a manual venue override', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ id: 'paper/1', venue: 'AAAI', venue_year: 2026 }),
+      });
+
+      const result = await updatePaperVenue('paper/1', 'AAAI', 2026);
+      expect(mockFetch).toHaveBeenCalledWith('/api/papers/paper%2F1/venue', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ venue: 'AAAI', venue_year: 2026 }),
+      });
+      expect(result.venue).toBe('AAAI');
     });
   });
 

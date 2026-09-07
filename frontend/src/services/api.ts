@@ -126,6 +126,19 @@ export async function fetchPaper(id: string): Promise<Paper> {
   return res.json();
 }
 
+export async function updatePaperVenue(id: string, venue: string | null, venueYear: number | null): Promise<Paper> {
+  const res = await fetch(`${API_BASE}/papers/${encodeURIComponent(id)}/venue`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ venue, venue_year: venueYear }),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => null))?.detail;
+    throw new Error(detail || "Failed to update paper venue");
+  }
+  return res.json();
+}
+
 export async function ingestPdf(file: File, projectId?: string): Promise<{ paper_id: string; title: string }> {
   const form = new FormData();
   form.append("file", file);
