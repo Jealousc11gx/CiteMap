@@ -1,16 +1,61 @@
 """论文雷达候选抓取与规则过滤测试。"""
 
 from datetime import datetime
+from types import SimpleNamespace
 
 from paper_graph.database import create_project, get_connection
+from paper_graph import radar
 from paper_graph.radar import (
     candidate_matches_config,
+    fetch_arxiv_candidates,
     get_radar_config,
     list_radar_matches,
     run_enabled_radar_collections,
     run_radar_collection,
     upsert_radar_config,
 )
+
+
+ATOM_FEED = b"""<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns='http://www.w3.org/2005/Atom' xmlns:arxiv='http://arxiv.org/schemas/atom' xmlns:dc='http://purl.org/dc/elements/1.1/'>
+  <title>cs.AI updates on arXiv.org</title>
+  <entry><id>oai:arXiv.org:2609.00001v1</id><title> New paper </title><summary>arXiv:2609.00001v1 Announce Type: new
+Abstract: A useful abstract.</summary><link href='https://arxiv.org/abs/2609.00001' rel='alternate'/><category term='cs.AI'/><published>2026-09-07T00:00:00-04:00</published><updated>2026-09-07T04:00:00Z</updated><arxiv:announce_type>new</arxiv:announce_type><dc:creator>Alice, Bob</dc:creator></entry>
+  <entry><id>oai:arXiv.org:2609.00002v2</id><title>Cross paper</title><summary>Abstract: Cross abstract.</summary><link href='https://arxiv.org/abs/2609.00002' rel='alternate'/><category term='cs.LG'/><category term='cs.AI'/><published>2026-09-07T00:00:00-04:00</published><arxiv:announce_type>cross</arxiv:announce_type><dc:creator>Carol</dc:creator></entry>
+</feed>"""
+
+
+def test_fetch_arxiv_candidates_uses_atom_metadata(monkeypatch):
+    response = SimpleNamespace(content=ATOM_FEED, raise_for_status=lambda: None)
+    requested = {}
+
+    def fake_get(url, **kwargs):
+        requested.update(url=url, **kwargs)
+        return response
+
+    monkeypatch.setattr(radar.requests, "get", fake_get)
+    candidates = fetch_arxiv_candidates(["cs.AI", "cs.LG"], max_results=5)
+    assert requested["url"] == "https://rss.arxiv.org/atom/cs.AI+cs.LG"
+    assert candidates[0] == {
+        "arxiv_id": "2609.00001",
+        "title": "New paper",
+        "abstract": "A useful abstract.",
+        "authors": ["Alice", "Bob"],
+        "categories": ["cs.AI"],
+        "primary_category": "cs.AI",
+        "published_date": "2026-09-07",
+        "updated_date": "2026-09-07",
+        "arxiv_url": "https://arxiv.org/abs/2609.00001",
+        "pdf_url": "https://arxiv.org/pdf/2609.00001",
+    }
+    assert [item["arxiv_id"] for item in candidates] == ["2609.00001", "2609.00002"]
+
+
+def test_fetch_arxiv_candidates_can_exclude_cross_list(monkeypatch):
+    response = SimpleNamespace(content=ATOM_FEED, raise_for_status=lambda: None)
+    monkeypatch.setattr(radar.requests, "get", lambda *args, **kwargs: response)
+    candidates = fetch_arxiv_candidates(["cs.AI"], include_cross_list=False)
+    assert [item["arxiv_id"] for item in candidates] == ["2609.00001"]
 
 
 def candidate(arxiv_id: str, title: str, categories=None, abstract=""):

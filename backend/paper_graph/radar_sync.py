@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import Any, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
@@ -25,7 +26,11 @@ class RadarRemoteError(RuntimeError):
 
 class RadarRemoteClient:
     def __init__(self, base_url: str, token: str, *, timeout: float = 20.0):
-        self.base_url = base_url.rstrip("/")
+        parsed = urlsplit(base_url.strip())
+        path = parsed.path.rstrip("/")
+        if path in {"/sync", "/profiles", "/items"}:
+            path = ""
+        self.base_url = urlunsplit((parsed.scheme, parsed.netloc, path, "", "")).rstrip("/")
         self.token = token
         self.timeout = timeout
 

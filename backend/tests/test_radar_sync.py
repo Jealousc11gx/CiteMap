@@ -2,7 +2,7 @@
 
 from paper_graph.database import create_project, get_connection
 from paper_graph.radar import enqueue_radar_operation, get_radar_sync_cursor, upsert_radar_candidate, upsert_radar_match
-from paper_graph.radar_sync import flush_pending_operations, sync_remote_changes
+from paper_graph.radar_sync import RadarRemoteClient, flush_pending_operations, sync_remote_changes
 
 
 class FakeRemote:
@@ -16,6 +16,11 @@ class FakeRemote:
     def update_state(self, project_id, arxiv_id, state):
         self.states.append((project_id, arxiv_id, state))
         return {"ok": True}
+
+
+def test_remote_client_normalizes_endpoint_url_to_worker_root():
+    assert RadarRemoteClient("https://radar.example/sync", "token").base_url == "https://radar.example"
+    assert RadarRemoteClient("https://radar.example/profiles/", "token").base_url == "https://radar.example"
 
 
 def test_sync_remote_changes_pulls_history_and_advances_cursor(tmp_db):

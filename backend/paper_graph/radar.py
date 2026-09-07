@@ -1,13 +1,17 @@
 """论文雷达本地存储、状态机与离线操作队列。"""
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import quote
 
 import sqlite3
 
 import arxiv
+import feedparser
+import requests
 
 from .database import get_connection
 
@@ -437,23 +441,70 @@ def _arxiv_result_to_candidate(result: object) -> dict:
     }
 
 
+def _atom_entry_to_candidate(entry: object) -> dict:
+    """将 arXiv 每日 Atom 条目转换为雷达候选，不再二次请求 export API。"""
+    entry_id = str(entry.get("id") or "").removeprefix("oai:arXiv.org:")
+    arxiv_id = re.sub(r"v\d+$", "", entry_id)
+    abstract = str(entry.get("summary") or "")
+    abstract = re.sub(
+        r"^arXiv:.*?Announce Type:\s*\w+\s*Abstract:\s*",
+        "",
+        abstract,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    abstract = re.sub(r"^Abstract:\s*", "", abstract, flags=re.IGNORECASE)
+    categories = [
+        str(tag.get("term") or "").strip()
+        for tag in (entry.get("tags") or [])
+        if str(tag.get("term") or "").strip()
+    ]
+    creator = str(entry.get("author") or entry.get("dc_creator") or "")
+    authors = [author.strip() for author in creator.split(",") if author.strip()]
+    arxiv_url = str(entry.get("link") or f"https://arxiv.org/abs/{arxiv_id}")
+    return {
+        "arxiv_id": arxiv_id,
+        "title": " ".join(str(entry.get("title") or "").split()),
+        "abstract": " ".join(abstract.split()),
+        "authors": authors,
+        "categories": categories,
+        "primary_category": categories[0] if categories else None,
+        "published_date": str(entry.get("published") or "")[:10] or None,
+        "updated_date": str(entry.get("updated") or "")[:10] or None,
+        "arxiv_url": arxiv_url,
+        "pdf_url": f"https://arxiv.org/pdf/{arxiv_id}",
+    }
+
+
 def fetch_arxiv_candidates(categories: list[str], max_results: int = 100, include_cross_list: bool = True) -> list[dict]:
-    """获取 arXiv 新候选的 metadata，不下载 PDF 或全文。"""
+    """从 arXiv 每日 Atom feed 获取新候选，不访问易限流的分类查询 API。"""
     normalized = [str(category).strip() for category in categories if str(category).strip()]
     if not normalized:
         raise ValueError("论文雷达至少需要一个 arXiv category")
-    query = " OR ".join(f"cat:{category}" for category in normalized)
-    client = arxiv.Client(page_size=min(max_results, 100), delay_seconds=3, num_retries=2)
-    search = arxiv.Search(
-        query=query,
-        max_results=max_results,
-        sort_by=arxiv.SortCriterion.SubmittedDate,
-        sort_order=arxiv.SortOrder.Descending,
+    query = quote("+".join(normalized), safe="+.")
+    response = requests.get(
+        f"https://rss.arxiv.org/atom/{query}",
+        headers={"User-Agent": "CiteMap/0.4 (+https://github.com/Jealousc11gx/CiteMap)"},
+        timeout=30,
     )
-    candidates = [_arxiv_result_to_candidate(result) for result in client.results(search)]
-    if not include_cross_list:
-        configured = {category.casefold() for category in normalized}
-        candidates = [item for item in candidates if str(item.get("primary_category") or "").casefold() in configured]
+    response.raise_for_status()
+    feed = feedparser.parse(response.content)
+    if getattr(feed, "bozo", False) and not feed.entries:
+        raise RuntimeError(f"arXiv Atom feed 解析失败: {feed.bozo_exception}")
+    if "Feed error for query" in str(feed.feed.get("title") or ""):
+        raise ValueError(f"无效的 arXiv categories: {', '.join(normalized)}")
+
+    allowed_types = {"new", "cross"} if include_cross_list else {"new"}
+    candidates = []
+    seen = set()
+    for entry in feed.entries:
+        announce_type = str(entry.get("arxiv_announce_type") or "new").casefold()
+        candidate = _atom_entry_to_candidate(entry)
+        if announce_type not in allowed_types or not candidate["arxiv_id"] or candidate["arxiv_id"] in seen:
+            continue
+        seen.add(candidate["arxiv_id"])
+        candidates.append(candidate)
+        if len(candidates) >= max_results:
+            break
     return candidates
 
 
