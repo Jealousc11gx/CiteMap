@@ -10,8 +10,19 @@ function json(data, status = 200, origin = "*") {
 
 function authorized(request, env) {
   const expected = env.RADAR_TOKEN;
-  if (!expected) return true;
+  if (!expected) return false;
   return request.headers.get("authorization") === `Bearer ${expected}`;
+}
+
+async function health(env, origin) {
+  if (!env.RADAR_TOKEN) {
+    return json({ ok: false, error: "RADAR_TOKEN is not configured" }, 503, origin);
+  }
+  if (!env.DB) {
+    return json({ ok: false, error: "D1 binding DB is not configured" }, 503, origin);
+  }
+  await env.DB.prepare("SELECT 1 AS ok").first();
+  return json({ ok: true, service: "citemap-radar" }, 200, origin);
 }
 
 function eventPayload(item) {
@@ -143,7 +154,9 @@ export default {
     const origin = env.ALLOWED_ORIGIN || "*";
     if (request.method === "OPTIONS") return new Response(null, { headers: { "access-control-allow-origin": origin, "access-control-allow-methods": "GET,POST,OPTIONS", "access-control-allow-headers": "Authorization,Content-Type" } });
     const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/health") return health(env, origin);
     if (url.pathname.startsWith("/r/")) return redirectRead(request, env, url.pathname.slice(3));
+    if (!env.RADAR_TOKEN) return json({ error: "RADAR_TOKEN is not configured" }, 503, origin);
     if (!authorized(request, env)) return json({ error: "unauthorized" }, 401, origin);
     try {
       if (request.method === "POST" && url.pathname === "/profiles") {

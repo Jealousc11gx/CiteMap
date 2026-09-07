@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Radar as RadarIcon, RefreshCw, Save, Settings2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ const EMPTY_CONFIG: Omit<RadarConfig, "project_id" | "updated_at"> = {
   debug: false,
   compute_mode: "cloud",
 };
+const AUTO_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 function splitValues(value: string) {
   return value.split(/[\n,，]/).map((item) => item.trim()).filter(Boolean);
@@ -79,6 +80,7 @@ export function Radar() {
   const [remoteUrl, setRemoteUrl] = useState(() => { try { return JSON.parse(localStorage.getItem("citemap.radar.setup.v1") || "{}").remote_url || localStorage.getItem("citemap.radar.remoteUrl") || ""; } catch { return localStorage.getItem("citemap.radar.remoteUrl") || ""; } });
   const [remoteToken, setRemoteToken] = useState(() => { try { return JSON.parse(localStorage.getItem("citemap.radar.setup.v1") || "{}").remote_token || ""; } catch { return ""; } });
   const [syncing, setSyncing] = useState(false);
+  const autoSynced = useRef(new Set<string>());
 
   useEffect(() => {
     if (localStorage.getItem(RADAR_SETUP_COMPLETE_KEY) !== "true") navigate("/settings/radar", { replace: true });
@@ -102,6 +104,26 @@ export function Radar() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    if (!projectId || !remoteUrl.trim() || !remoteToken.trim()) return;
+    const key = `${projectId}:${remoteUrl.trim()}`;
+    if (autoSynced.current.has(key)) return;
+    const storageKey = `citemap.radar.lastAutoSync:${key}`;
+    const lastSync = Number(sessionStorage.getItem(storageKey) || 0);
+    if (Date.now() - lastSync < AUTO_SYNC_INTERVAL_MS) return;
+    autoSynced.current.add(key);
+    sessionStorage.setItem(storageKey, String(Date.now()));
+    setSyncing(true);
+    syncRadar(projectId, remoteUrl.trim(), remoteToken.trim())
+      .then(() => load())
+      .catch((err) => {
+        autoSynced.current.delete(key);
+        sessionStorage.removeItem(storageKey);
+        setError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => setSyncing(false));
+  }, [load, projectId, remoteToken, remoteUrl]);
+
   const filtered = useMemo(() => tab === "all" ? matches : matches.filter((match) => match.state === tab), [matches, tab]);
 
   const saveConfig = async () => {
@@ -111,6 +133,11 @@ export function Radar() {
       const updated = await updateRadarConfig(projectId, config);
       setConfig(updated);
       setShowSettings(false);
+      if (remoteUrl.trim() && remoteToken.trim()) {
+        syncRadar(projectId, remoteUrl.trim(), remoteToken.trim()).catch((err) => {
+          setError(err instanceof Error ? err.message : String(err));
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -153,7 +180,7 @@ export function Radar() {
     setError(null);
     try {
       localStorage.setItem("citemap.radar.remoteUrl", remoteUrl.trim());
-      await syncRadar(projectId, remoteUrl.trim(), remoteToken.trim());
+      await syncRadar(projectId, remoteUrl.trim(), remoteToken.trim(), true);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -166,6 +193,11 @@ export function Radar() {
     try {
       const updated = await updateRadarMatch(match.id, state);
       setMatches((items) => items.map((item) => item.id === match.id ? { ...item, ...updated } : item));
+      if (projectId && remoteUrl.trim() && remoteToken.trim()) {
+        syncRadar(projectId, remoteUrl.trim(), remoteToken.trim()).catch((err) => {
+          setError(err instanceof Error ? err.message : String(err));
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -199,7 +231,7 @@ export function Radar() {
           <label className="block space-y-1 text-sm"><span>项目研究目标补充</span><Textarea value={config.profile_override} onChange={(event) => setConfig({ ...config, profile_override: event.target.value })} placeholder="描述项目关注的研究问题" /></label>
           <div className="border-t pt-4">
             <p className="mb-2 text-sm font-medium">远端雷达同步</p>
-            <p className="mb-3 text-xs text-muted-foreground">用于电脑关闭期间保存每日推荐、邮件点击状态。token 仅保存在当前浏览器内存，不写入 CiteMap 数据库。</p>
+            <p className="mb-3 text-xs text-muted-foreground">用于电脑关闭期间保存每日推荐、邮件点击状态。Token 保存在当前浏览器的本地配置中，不写入 CiteMap 数据库。</p>
             <div className="grid gap-3 md:grid-cols-2">
               <Input value={remoteUrl} onChange={(event) => setRemoteUrl(event.target.value)} placeholder="https://your-radar-worker.example.com" />
               <Input type="password" value={remoteToken} onChange={(event) => setRemoteToken(event.target.value)} placeholder="Radar Store token" />

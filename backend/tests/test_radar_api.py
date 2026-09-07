@@ -108,3 +108,39 @@ def test_radar_sync_api_returns_structured_error(project_client):
     )
     assert response.status_code == 502
     assert response.json()["detail"]["code"] == "RADAR_SYNC_FAILED"
+
+
+def test_radar_sync_only_publishes_changed_profile_unless_forced(project_client, monkeypatch):
+    import main
+
+    created = project_client.post("/api/projects", json={"name": "Profile fingerprint"})
+    project_id = created.json()["id"]
+    published = []
+
+    class FakeClient:
+        def __init__(self, base_url, token):
+            self.base_url = base_url.rstrip("/")
+
+        def publish_profile(self, current_project_id, profile):
+            published.append((current_project_id, profile))
+            return {"ok": True}
+
+    monkeypatch.setattr(main, "RadarRemoteClient", FakeClient)
+    monkeypatch.setattr(main, "flush_pending_operations", lambda conn, client: {"sent": 0, "failed": 0})
+    monkeypatch.setattr(main, "sync_remote_changes", lambda conn, client: {"applied": 0, "pages": 1, "cursor": "0"})
+    payload = {"remote_url": "https://radar.example", "token": "secret"}
+
+    first = project_client.post("/api/radar/sync", params={"project_id": project_id}, json=payload)
+    second = project_client.post("/api/radar/sync", params={"project_id": project_id}, json=payload)
+    forced = project_client.post(
+        "/api/radar/sync",
+        params={"project_id": project_id},
+        json={**payload, "force_publish_profile": True},
+    )
+
+    assert first.status_code == 200
+    assert first.json()["published"] == 1
+    assert second.json()["published"] == 0
+    assert forced.json()["published"] == 1
+    assert forced.json()["profile_forced"] is True
+    assert len(published) == 2

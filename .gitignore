@@ -17,6 +17,7 @@ frontend/.env
 frontend/.env.local
 frontend/.env.*.local
 radar-worker/wrangler.ci.toml
+radar-worker/.wrangler/
 
 # ──────────────────────────────
 # Python

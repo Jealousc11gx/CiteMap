@@ -27,18 +27,20 @@ Worker 自动部署需要在 GitHub Actions Secrets 配置：
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Account ID |
 | `CLOUDFLARE_D1_DATABASE_ID` | 已创建的 CiteMap D1 database ID |
 
-`deploy-radar-worker.yml` 会临时生成 `wrangler.ci.toml`。D1 ID 不写入仓库。已有 Worker Secret `RADAR_TOKEN` 会在部署时保留。
+`deploy-radar-worker.yml` 会临时生成 `wrangler.ci.toml`。D1 ID 不写入仓库。部署时会把 GitHub Secret `RADAR_REMOTE_TOKEN` 自动写成 Worker Secret `RADAR_TOKEN`，随后调用 `/health` 验证 Worker、Token、D1 binding。
 
 旧 D1 缺少 AI 字段时，部署 workflow 会检测 `items` 表并自动执行 `0003_add_ai_fields.sql`。以后只需提交新的受管 migration，不需要在本地运行 Wrangler。
 
 ## 2. 部署 Worker
 
-Cloudflare 配置属于远端实例，与 Windows、macOS、Linux 无关。推荐直接使用 Cloudflare Dashboard 完成首次部署，不需要在本地安装 Wrangler 或执行终端命令：
+Cloudflare 配置属于远端实例，与 Windows、macOS、Linux 无关。推荐使用 Dashboard 创建 D1，再由 GitHub Actions 部署 Worker，不需要在本地安装 Wrangler：
 
-1. 创建 Worker，粘贴 `radar-worker/src/index.js`。
-2. 创建 D1 数据库，执行 `radar-worker/schema.sql`。
-3. 在 Worker Settings → Variables 添加 Secret：`RADAR_TOKEN`。
-4. 发布 Worker，记录 Worker URL。
+1. 在 Cloudflare Dashboard 创建名为 `citemap-radar` 的 D1 数据库，记录 Database ID。
+2. 在 GitHub 配置 Cloudflare、Radar Store、SMTP、LLM Secrets/Variables。
+3. 手动运行 `Deploy Radar Worker`；workflow 自动应用 D1 migration、部署 Worker、写入 `RADAR_TOKEN`。
+4. 记录 `workers.dev` URL，将其保存为 GitHub Secret `RADAR_REMOTE_URL` 后重新运行部署健康检查。
+
+已有 Worker 时，直接把现有 URL 写入 `RADAR_REMOTE_URL`。第一次创建 Worker、尚不知道最终 URL 时，可先部署一次，再补 URL 并重新运行 workflow。
 
 不需要为 Worker + D1 单独配置域名。Cloudflare 会提供 `https://<worker-name>.<subdomain>.workers.dev`，CiteMap 可直接使用。自定义域名仅在需要品牌入口或已有 Cloudflare Zone 时配置，D1 本身没有域名。
 
@@ -101,14 +103,14 @@ https://citemap-radar.<你的 Cloudflare 子域>.workers.dev
 | `RADAR_EMBEDDING_BATCH_SIZE` | `64` |
 | `RADAR_DEBUG` | `false` |
 | `RADAR_LLM_ENABLED` | `true` |
-| `RADAR_LLM_REQUIRED` | `false` |
+| `RADAR_LLM_REQUIRED` | `true` |
 | `LLM_BASE_URL` | `https://api.openai.com/v1` |
 | `LLM_MODEL` | `gpt-4o-mini` |
 | `RADAR_SCHEDULE_UTC` | 记录当前计划时间；实际 cron 由 workflow 文件控制 |
 
 以上模型变量均有 workflow 默认值，不创建也可以运行。建议显式创建，便于以后改模型。
 
-Action 现在会为每篇邮件论文调用 LLM 生成 `tldr`。`RADAR_LLM_REQUIRED=false` 时，LLM 不可用会降级为原始摘要，仍继续发邮件。测试 workflow 会将它设为 `true`，用于验证 LLM 配置。
+正式 workflow 与测试 workflow 默认都使用 `RADAR_LLM_REQUIRED=true`。LLM 未生成 `tldr` 或 `ai_summary` 时任务失败，不会发送缺少 AI 内容的推荐邮件。需要显式降级时再将该 Variable 改为 `false`。
 
 完整等价配置快照由云端配置向导生成，内容对应 daily arxiv 的 `email`、`embedding/reranker`、`llm`、`executor`、`remote` 分组。CiteMap 当前不需要 `ZOTERO_ID`、`ZOTERO_KEY`，因为 reference papers 来自本地项目并发布到 Worker。
 
@@ -209,3 +211,4 @@ URLError: <urlopen error EOF occurred in violation of protocol (_ssl.c:1129)>
 - 配置页当前生成清单，不直接管理 GitHub Secrets。
 - Worker 必须先部署，Action 才能读取 profile、保存 item、记录邮件状态。
 - `radar.yml` 当前 cron 为 UTC `22:00`，即北京时间次日 `06:00`。
+- 进入雷达页会自动同步，但同一项目和 Worker URL 在当前浏览器会话内按 5 分钟节流；profile 内容未变化时不会重复发布。

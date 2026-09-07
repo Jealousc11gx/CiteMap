@@ -46,4 +46,4 @@ jobs:
         with:
           node-version: "24"
       - run: node --check radar-worker/src/index.js
-
+      - run: npm test --prefix radar-worker

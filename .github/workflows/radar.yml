@@ -42,7 +42,7 @@ jobs:
           RADAR_EMBEDDING_BATCH_SIZE: ${{ vars.RADAR_EMBEDDING_BATCH_SIZE || '64' }}
           RADAR_DEBUG: ${{ vars.RADAR_DEBUG || 'false' }}
           RADAR_LLM_ENABLED: ${{ vars.RADAR_LLM_ENABLED || 'true' }}
-          RADAR_LLM_REQUIRED: ${{ vars.RADAR_LLM_REQUIRED || 'false' }}
+          RADAR_LLM_REQUIRED: ${{ vars.RADAR_LLM_REQUIRED || 'true' }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
           LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}

@@ -1,5 +1,6 @@
 """CiteMap - FastAPI 后端服务。"""
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -167,6 +168,7 @@ class RadarSyncRequest(BaseModel):
     remote_url: str
     token: str
     publish_profile: bool = True
+    force_publish_profile: bool = False
 
 
 class ChatMessageResponse(BaseModel):
@@ -468,9 +470,32 @@ def api_sync_radar(req: RadarSyncRequest, project_id: Optional[str] = None):
                     "reference_papers": load_project_references(conn, current_project_id),
                     "anchor_paper_ids": list(load_anchor_ids(conn, current_project_id)),
                 }
-                client.publish_profile(current_project_id, profile)
-                published += 1
-        return {"flushed": flushed, "synced": synced, "published": published}
+                serialized = json.dumps(profile, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                fingerprint = hashlib.sha256(
+                    f"{client.base_url}\n{serialized}".encode("utf-8")
+                ).hexdigest()
+                fingerprint_key = f"profile_fingerprint:{current_project_id}"
+                previous = conn.execute(
+                    "SELECT value FROM radar_sync_state WHERE key=?", (fingerprint_key,)
+                ).fetchone()
+                if req.force_publish_profile or not previous or previous["value"] != fingerprint:
+                    client.publish_profile(current_project_id, profile)
+                    conn.execute(
+                        """
+                        INSERT INTO radar_sync_state (key, value, updated_at)
+                        VALUES (?, ?, CURRENT_TIMESTAMP)
+                        ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP
+                        """,
+                        (fingerprint_key, fingerprint),
+                    )
+                    conn.commit()
+                    published += 1
+        return {
+            "flushed": flushed,
+            "synced": synced,
+            "published": published,
+            "profile_forced": req.force_publish_profile,
+        }
     except Exception as exc:
         raise HTTPException(status_code=502, detail={"code": "RADAR_SYNC_FAILED", "error": str(exc)})
     finally:
