@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, ExternalLink, Radar as RadarIcon, RefreshCw, Save, Settings2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, Radar as RadarIcon, RefreshCw, Save, Settings2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useProject } from "@/contexts/ProjectContext";
 import { fetchRadarConfig, fetchRadarMatches, scanRadar, syncRadar, updateRadarConfig, updateRadarMatch } from "@/services/api";
 import type { RadarConfig, RadarMatch, RadarState } from "@/types";
@@ -29,6 +37,13 @@ const RADAR_DEPLOYMENT_GUIDE_URL = "https://github.com/Jealousc11gx/CiteMap/blob
 type RadarConnection = {
   remoteUrl: string;
   remoteToken: string;
+};
+
+const RADAR_STATE_LABELS: Record<RadarState, string> = {
+  unread: "未读",
+  read: "已读",
+  saved: "已保存",
+  dismissed: "已忽略",
 };
 
 function loadRadarConnection(): RadarConnection {
@@ -61,6 +76,10 @@ function splitValues(value: string) {
 
 function RadarCard({ match, onState }: { match: RadarMatch; onState: (match: RadarMatch, state: RadarState) => void }) {
   const [busy, setBusy] = useState(false);
+  const isRead = match.state === "read" || match.state === "saved";
+  const canMarkRead = match.state === "unread";
+  const canSave = match.state !== "saved";
+  const canDismiss = match.state === "unread" || match.state === "read";
   const apply = async (state: RadarState) => {
     setBusy(true);
     try {
@@ -78,7 +97,7 @@ function RadarCard({ match, onState }: { match: RadarMatch; onState: (match: Rad
           </a>
           <p className="mt-1 text-xs text-muted-foreground">{match.arxiv_id} · {match.published_date || "未知日期"} · score {match.score.toFixed(3)}</p>
         </div>
-        <span className="rounded-full bg-muted px-2 py-1 text-xs">{match.state}</span>
+        <span className="rounded-full bg-muted px-2 py-1 text-xs">{RADAR_STATE_LABELS[match.state]}</span>
       </div>
       {match.title_zh && <p className="mt-2 text-sm font-medium">{match.title_zh}</p>}
       {!!match.affiliations?.length && <p className="mt-2 text-xs text-muted-foreground">机构：{match.affiliations.join(" · ")}</p>}
@@ -87,9 +106,9 @@ function RadarCard({ match, onState }: { match: RadarMatch; onState: (match: Rad
       <p className="mt-3 line-clamp-4 text-sm leading-6 text-muted-foreground">{match.ai_summary || match.abstract_zh || match.abstract || "暂无摘要"}</p>
       <p className="mt-3 text-xs text-muted-foreground">{match.reason || "项目语义相似度"}</p>
       <div className="mt-4 flex flex-wrap gap-2">
-        {match.state !== "read" && match.state !== "saved" && <Button size="sm" variant="outline" disabled={busy} onClick={() => apply("read")}>标记已读</Button>}
-        {match.state !== "saved" && <Button size="sm" disabled={busy} onClick={() => apply("saved")}><Save className="mr-1 h-3.5 w-3.5" />保存入库</Button>}
-        {match.state !== "dismissed" && <Button size="sm" variant="ghost" disabled={busy} onClick={() => apply("dismissed")}><X className="mr-1 h-3.5 w-3.5" />忽略</Button>}
+        <Button size="sm" variant="outline" disabled={busy || !canMarkRead} onClick={() => apply("read")}>{isRead ? "已读" : "标记已读"}</Button>
+        <Button size="sm" disabled={busy || !canSave} onClick={() => apply("saved")}><Save className="mr-1 h-3.5 w-3.5" />{match.state === "saved" ? "已保存" : "保存入库"}</Button>
+        <Button size="sm" variant="ghost" disabled={busy || !canDismiss} onClick={() => apply("dismissed")}><X className="mr-1 h-3.5 w-3.5" />{match.state === "dismissed" ? "已忽略" : "忽略"}</Button>
       </div>
     </article>
   );
@@ -250,7 +269,16 @@ export function Radar() {
           <Button onClick={runScan} disabled={scanning}>{scanning ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}{config.compute_mode === "local" ? "本地扫描" : "同步云端推荐"}</Button>
         </div>
       </div>
-      {error && <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
+      <Dialog open={Boolean(error)} onOpenChange={(open) => { if (!open) setError(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-destructive/10 text-destructive"><AlertTriangle className="h-5 w-5" /></div>
+            <DialogTitle>雷达操作失败</DialogTitle>
+            <DialogDescription className="max-h-[50vh] overflow-y-auto break-words pt-1 leading-6 text-foreground">{error}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter><Button variant="outline" onClick={() => setError(null)}>关闭</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
       {notice && <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm text-primary" role="status"><CheckCircle2 className="h-4 w-4 shrink-0" />{notice}</div>}
       {!connectionSaved && !showSettings && (
         <section className="border-y bg-muted/30 px-4 py-5">
@@ -275,8 +303,8 @@ export function Radar() {
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={config.enabled} onChange={(event) => setConfig({ ...config, enabled: event.target.checked })} />启用当前项目雷达</label>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-1 text-sm"><span>arXiv categories</span><Input value={config.categories.join(", ")} onChange={(event) => setConfig({ ...config, categories: splitValues(event.target.value) })} placeholder="cs.AI, cs.CV" /></label>
-            <label className="space-y-1 text-sm"><span>关注关键词</span><Input value={config.include_keywords.join(", ")} onChange={(event) => setConfig({ ...config, include_keywords: splitValues(event.target.value) })} placeholder="retrieval, multimodal" /></label>
-            <label className="space-y-1 text-sm"><span>排除关键词</span><Input value={config.exclude_keywords.join(", ")} onChange={(event) => setConfig({ ...config, exclude_keywords: splitValues(event.target.value) })} placeholder="medical" /></label>
+            <label className="space-y-1 text-sm"><span>关注关键词</span><Input value={config.include_keywords.join(", ")} onChange={(event) => setConfig({ ...config, include_keywords: splitValues(event.target.value) })} placeholder="retrieval, multimodal" /><span className="block text-xs leading-5 text-muted-foreground">标题或摘要命中任一词后才进入语义排序；留空不过滤。</span></label>
+            <label className="space-y-1 text-sm"><span>排除关键词</span><Input value={config.exclude_keywords.join(", ")} onChange={(event) => setConfig({ ...config, exclude_keywords: splitValues(event.target.value) })} placeholder="medical" /><span className="block text-xs leading-5 text-muted-foreground">标题或摘要命中任一词即排除，优先级高于关注关键词。</span></label>
             <div className="grid grid-cols-2 gap-3"><label className="space-y-1 text-sm"><span>Top K</span><Input type="number" min={1} value={config.top_k} onChange={(event) => setConfig({ ...config, top_k: Number(event.target.value) })} /></label><label className="space-y-1 text-sm"><span>最低分数</span><Input type="number" step="0.01" min={0} value={config.min_score} onChange={(event) => setConfig({ ...config, min_score: Number(event.target.value) })} /></label></div>
             <div className="grid gap-3 md:grid-cols-2"><label className="space-y-1 text-sm"><span>抓取上限</span><Input type="number" min={1} max={500} value={config.fetch_limit} onChange={(event) => setConfig({ ...config, fetch_limit: Number(event.target.value) })} /></label><label className="space-y-1 text-sm"><span>计算模式</span><select className="flex h-10 w-full rounded-md border bg-background px-3 text-sm" value={config.compute_mode} onChange={(event) => setConfig({ ...config, compute_mode: event.target.value as RadarConfig["compute_mode"] })}><option value="cloud">云端计算（推荐）</option><option value="hybrid">云端优先，本地备用</option><option value="local">本地计算</option></select></label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={config.include_cross_list} onChange={(event) => setConfig({ ...config, include_cross_list: event.target.checked })} />包含 cross-list 论文</label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={config.send_empty} onChange={(event) => setConfig({ ...config, send_empty: event.target.checked })} />没有推荐时也发送邮件</label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={config.debug} onChange={(event) => setConfig({ ...config, debug: event.target.checked })} />Debug 模式</label></div>
           </div>

@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -351,7 +350,6 @@ export function Chat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("chat");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
@@ -661,104 +659,57 @@ export function Chat() {
 
   return (
     <div className="flex h-[calc(100vh-9.5rem)] min-h-[600px] flex-col overflow-hidden">
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-h-0 flex-1 flex-col">
-        <div className="mb-3 flex items-end justify-between">
-          <div>
-            <h1 className="workspace-heading">研究助手</h1>
-            <p className="workspace-description">围绕当前项目检索、分析、整理论文。</p>
-          </div>
-          <TabsList>
-            <TabsTrigger value="chat">对话</TabsTrigger>
-            <TabsTrigger value="about">关于</TabsTrigger>
-          </TabsList>
-        </div>
+      <div className="mb-3">
+        <h1 className="workspace-heading">研究助手</h1>
+        <p className="workspace-description">围绕当前项目检索、分析、整理论文。</p>
+      </div>
 
-        <TabsContent value="chat" className="mt-0 flex flex-1 min-h-0">
-          <div className="relative flex h-full min-h-0 w-full gap-0 overflow-hidden rounded-lg border bg-card">
-            {renderSidebar()}
+      <div className="relative flex min-h-0 flex-1 w-full gap-0 overflow-hidden rounded-lg border bg-card">
+        {renderSidebar()}
 
-            <Card className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-none border-0">
-              <div ref={messagesContainerRef} className="min-h-0 flex-1 overflow-y-auto p-4">
-                {messages.length === 0 ? (
-                  <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-                      <Sparkles className="h-6 w-6 text-primary" />
-                    </div>
-                    <p className="mt-3 text-base font-medium">开始对话</p>
-                    <p className="mt-1 text-xs">输入问题，Agent 会自动调用论文管理工具</p>
-                  </div>
-                ) : (
-                  <div className="mx-auto w-full max-w-4xl">
-                    {messages.map((msg, i) => (
-                      <MessageBubble key={i} message={msg} />
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t border-border/60 p-4">
-                <div className="mx-auto flex w-full max-w-4xl gap-2">
-                  <Textarea
-                    ref={inputRef}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="输入消息... (Shift+Enter 换行)"
-                    className="min-h-[48px] max-h-[200px] resize-none"
-                    rows={1}
-                    aria-label="聊天输入框"
-                  />
-                  <Button
-                    onClick={handleSend}
-                    disabled={isLoading || !input.trim()}
-                    size="icon"
-                    className="h-12 w-12 shrink-0"
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
+        <Card className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-none border-0">
+          <div ref={messagesContainerRef} className="min-h-0 flex-1 overflow-y-auto p-4">
+            {messages.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+                  <Sparkles className="h-6 w-6 text-primary" />
                 </div>
+                <p className="mt-3 text-base font-medium">开始对话</p>
+                <p className="mt-1 text-xs">输入问题，Agent 会自动调用论文管理工具</p>
               </div>
-            </Card>
+            ) : (
+              <div className="mx-auto w-full max-w-4xl">
+                {messages.map((msg, i) => (
+                  <MessageBubble key={i} message={msg} />
+                ))}
+              </div>
+            )}
           </div>
-        </TabsContent>
 
-        <TabsContent value="about" className="mt-0 min-h-0 flex-1">
-          <Card className="h-full overflow-y-auto border-border/60 p-6">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                <Bot className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-balance">智能聊天</h2>
-                <p className="text-xs text-muted-foreground">由 Kimi Agent SDK 驱动</p>
-              </div>
+          <div className="border-t border-border/60 p-4">
+            <div className="mx-auto flex w-full max-w-4xl gap-2">
+              <Textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="输入消息... (Shift+Enter 换行)"
+                className="min-h-[48px] max-h-[200px] resize-none"
+                rows={1}
+                aria-label="聊天输入框"
+              />
+              <Button
+                onClick={handleSend}
+                disabled={isLoading || !input.trim()}
+                size="icon"
+                className="h-12 w-12 shrink-0"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
             </div>
-
-            <div className="mt-4 space-y-3 text-sm text-muted-foreground">
-              <p>
-                聊天界面已使用原生 React 组件集成到本系统中，支持流式输出、Markdown 渲染和论文卡片展示。
-              </p>
-
-              <p>可用的论文管理工具包括：</p>
-              <ul className="ml-2 list-inside list-disc space-y-1">
-                <li>search_arxiv：搜索 arXiv 论文</li>
-                <li>ingest_arxiv_paper：入库 arXiv 论文</li>
-                <li>list_local_papers / search_local_papers：查询本地论文库</li>
-                <li>get_paper_details：查看论文详情</li>
-                <li>annotate_paper_tool：智能标注论文</li>
-                <li>download_paper_pdf：下载 PDF</li>
-                <li>get_paper_notes：查看论文笔记</li>
-                <li>get_graph_summary：查看知识图谱统计</li>
-              </ul>
-
-              <p>
-                你可以在输入框里直接要求 Agent 连续执行多个步骤，例如：
-                <em>"搜索 transformer 论文，把第一篇入库并标注"</em>。
-              </p>
-            </div>
-          </Card>
-        </TabsContent>
-      </Tabs>
+          </div>
+        </Card>
+      </div>
 
       {/* Delete dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
