@@ -3,6 +3,10 @@ export interface Paper {
   title: string;
   abstract: string;
   published_date: string;
+  venue?: string;
+  venue_year?: number;
+  venue_evidence?: string;
+  venue_checked_at?: string;
   categories: string;
   source: "local" | "arxiv";
   arxiv_url?: string;
@@ -68,12 +72,16 @@ export interface GraphNode {
   description?: string;
   representative_author?: string;
   latest_paper_date?: string;
+  venue?: string;
+  venue_year?: number;
 }
 
 export interface GraphPaperReference {
   id: string;
   title: string;
   date?: string;
+  venue?: string;
+  venue_year?: number;
 }
 
 export interface GraphEdge {

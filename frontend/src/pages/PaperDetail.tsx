@@ -167,6 +167,7 @@ export function PaperDetail() {
           <Badge variant="secondary" className="text-xs">
             {paper.source === "arxiv" ? "arXiv" : "本地"}
           </Badge>
+          {paper.venue && <Badge className="text-xs">{paper.venue} {paper.venue_year || ""}</Badge>}
           {categories.map((cat, idx) => (
             <Badge key={idx} variant="outline" className="text-xs">
               {cat}

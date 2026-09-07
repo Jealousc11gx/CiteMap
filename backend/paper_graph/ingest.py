@@ -222,6 +222,8 @@ def _fetch_arxiv_abs_metadata(arxiv_id: str, timeout: int = 20) -> SimpleNamespa
         authors=authors,
         affiliation=[],
         pdf_url=(values.get("citation_pdf_url") or [None])[0],
+        comment=None,
+        journal_ref=None,
     )
 
 
@@ -241,6 +243,8 @@ def _paper_data_from_arxiv(
     paper_id: str,
     pdf_path: Optional[str] = None,
 ) -> dict:
+    arxiv_comment = getattr(result, "comment", None)
+    journal_ref = getattr(result, "journal_ref", None)
     return {
         "id": paper_id,
         "title": result.title.replace("\n", " ").strip(),
@@ -251,6 +255,8 @@ def _paper_data_from_arxiv(
         "pdf_path": pdf_path,
         "source": "arxiv",
         "arxiv_url": result.entry_id,
+        "arxiv_comment": arxiv_comment.strip() if isinstance(arxiv_comment, str) else None,
+        "journal_ref": journal_ref.strip() if isinstance(journal_ref, str) else None,
     }
 
 

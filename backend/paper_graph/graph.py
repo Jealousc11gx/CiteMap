@@ -151,7 +151,7 @@ def build_team_ego_graph(
     params = (project_id,) if project_id else ()
     cur.execute(f"""
         SELECT p.id, p.title, p.published_date, p.core_contribution,
-               p.categories, p.arxiv_url
+               p.categories, p.arxiv_url, p.venue, p.venue_year
         FROM papers p
         {project_join}
         {project_where}
@@ -257,6 +257,8 @@ def build_team_ego_graph(
                 "id": paper_id,
                 "title": papers[paper_id]["title"],
                 "date": papers[paper_id]["published_date"],
+                "venue": papers[paper_id]["venue"],
+                "venue_year": papers[paper_id]["venue_year"],
             }
             for paper_id in related_paper_ids
         ]
@@ -299,6 +301,8 @@ def build_team_ego_graph(
             core_contribution=paper["core_contribution"],
             categories=paper["categories"],
             arxiv_url=paper["arxiv_url"],
+            venue=paper["venue"],
+            venue_year=paper["venue_year"],
             authors=[author["name"] for author in authors_by_paper[paper_id]],
             institutions=institutions_by_paper[paper_id],
         )
@@ -316,6 +320,8 @@ def build_team_ego_graph(
                 "id": paper_id,
                 "title": paper["title"],
                 "date": paper["published_date"],
+                "venue": paper["venue"],
+                "venue_year": paper["venue_year"],
             }
             if graph.has_edge(team_a, team_b):
                 graph[team_a][team_b]["weight"] += 1
@@ -355,7 +361,7 @@ def build_paper_graph(
     # 加载论文节点及其可用于详情展示的元数据。
     cur.execute(f"""
         SELECT p.id, p.title, p.published_date, p.core_contribution,
-               p.categories, p.arxiv_url, p.source
+               p.categories, p.arxiv_url, p.source, p.venue, p.venue_year
         FROM papers p
         {paper_join}
         {paper_where}
@@ -371,6 +377,8 @@ def build_paper_graph(
             categories=row["categories"],
             arxiv_url=row["arxiv_url"],
             source=row["source"],
+            venue=row["venue"],
+            venue_year=row["venue_year"],
             authors=[],
             institutions=[],
         )

@@ -20,6 +20,7 @@ interface PixiNodeView {
   forceNode: ForceNode;
   root: Container;
   body: Graphics;
+  halo: Graphics;
   label: Text;
 }
 
@@ -53,6 +54,7 @@ interface PixiGraphProps {
   nodeColor: (node: GraphNode) => string;
   onNodeClick?: (node: GraphNode) => void;
   onEdgeClick?: (edge: GraphEdge) => void;
+  onBackgroundClick?: () => void;
   matchedNodeIds?: Set<string>;
   focusedNodeIds?: Set<string>;
   selectedNodeId?: string | null;
@@ -190,6 +192,7 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
   nodeColor,
   onNodeClick,
   onEdgeClick,
+  onBackgroundClick,
   matchedNodeIds,
   focusedNodeIds,
   selectedNodeId,
@@ -292,9 +295,8 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
           if (nodePointerStartRef.current) {
             const dx = event.global.x - nodePointerStartRef.current.x;
             const dy = event.global.y - nodePointerStartRef.current.y;
-            if (Math.hypot(dx, dy) > 4) {
-              didMoveDraggedNodeRef.current = true;
-            }
+            if (!didMoveDraggedNodeRef.current && Math.hypot(dx, dy) <= 6) return;
+            didMoveDraggedNodeRef.current = true;
           }
           const local = event.getLocalPosition(scene);
           node.fx = local.x;
@@ -312,7 +314,7 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
       };
 
       const endPointerAction = () => {
-        if (draggingNodeIdRef.current && forceLayoutRef.current) {
+        if (draggingNodeIdRef.current && forceLayoutRef.current && didMoveDraggedNodeRef.current) {
           const node = forceLayoutRef.current.nodeById.get(draggingNodeIdRef.current);
           if (node) {
             node.fx = undefined;
@@ -331,6 +333,9 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
 
       app.canvas.addEventListener("wheel", handleWheel, { passive: false });
       app.stage.on("pointerdown", handleStagePointerDown);
+      app.stage.on("pointertap", (event: FederatedPointerEvent) => {
+        if (event.target === app.stage) onBackgroundClick?.();
+      });
       app.stage.on("globalpointermove", handleStagePointerMove);
       app.stage.on("globalpointerup", endPointerAction);
       app.stage.on("globalpointerupoutside", endPointerAction);
@@ -503,7 +508,7 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
     forceLayoutRef.current = layout;
 
     // d3-force 支持 stop 后手动 tick，静态图无需永久运行渲染循环。
-    layout.simulation.tick(safeNodes.length > 400 ? 80 : 160);
+    layout.simulation.tick(safeNodes.length > 400 ? 120 : 240);
 
     for (const edge of safeEdges) {
       if (!layout.nodeById.has(edge.source) || !layout.nodeById.has(edge.target)) continue;
@@ -558,12 +563,15 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
   function createNodeView(node: GraphNode, forceNode: ForceNode): PixiNodeView {
     const radius = getNodeRadius(node);
     const root = new Container();
+    const halo = new Graphics();
     const body = new Graphics();
     const isTeam = node.group === "team";
     const color = isTeam
       ? colorToNumber(nodeColor(node))
       : isDark ? 0x1e293b : 0xffffff;
 
+    halo.circle(0, 0, radius + 7).stroke({ color: isDark ? 0x93c5fd : 0x1d4ed8, width: 3, alpha: 0.95 });
+    halo.visible = false;
     body.circle(0, 0, radius).fill({ color, alpha: isTeam ? 0.96 : 1 });
     body.circle(0, 0, radius).stroke({ color: isTeam ? color : strokeColor, width: isTeam ? 2 : 1.5, alpha: 0.9 });
     if (isTeam) body.circle(0, 0, radius + 5).stroke({ color, width: 1.5, alpha: 0.2 });
@@ -586,8 +594,9 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
     });
     label.visible = true;
     label.alpha = 0.92;
+    label.eventMode = "none";
 
-    root.addChild(body);
+    root.addChild(halo, body);
     root.eventMode = "dynamic";
     root.cursor = "grab";
     root.hitArea = { contains: (x: number, y: number) => Math.hypot(x, y) <= Math.max(18, radius + 8) } as any;
@@ -616,7 +625,7 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
       }
     });
 
-    return { node, forceNode, root, body, label };
+    return { node, forceNode, root, body, halo, label };
   }
 
   function truncateLabel(label: string, maxLength: number): string {
@@ -666,14 +675,13 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
       nodeView.label.position.set(x, isTeam ? y : y + getNodeRadius(nodeView.node) + 10);
       const matchesSearch = !matchedNodeIds?.size || matchedNodeIds.has(nodeView.node.id);
       const isFocused = !focusedNodeIds || focusedNodeIds.has(nodeView.node.id);
-      nodeView.root.alpha = matchesSearch && isFocused ? 1 : matchesSearch || isFocused ? 0.34 : 0.12;
-      nodeView.label.alpha = matchesSearch && isFocused ? 0.95 : 0.2;
+      nodeView.root.alpha = matchesSearch && isFocused ? 1 : matchesSearch || isFocused ? 0.56 : 0.16;
+      nodeView.label.alpha = matchesSearch && isFocused ? 0.95 : matchesSearch || isFocused ? 0.52 : 0.16;
       if (selectedNodeId === nodeView.node.id) {
-        nodeView.root.scale.set(1.18);
         nodeView.label.alpha = 1;
-      } else {
-        nodeView.root.scale.set(1);
       }
+      nodeView.root.scale.set(1);
+      nodeView.halo.visible = selectedNodeId === nodeView.node.id;
 
       const isRequiredLabel = isTeam || selectedNodeId === nodeView.node.id || Boolean(matchedNodeIds?.has(nodeView.node.id));
       const rect = {

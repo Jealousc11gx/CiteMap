@@ -33,6 +33,12 @@ def init_db(db_path: Optional[Path] = None) -> None:
             core_contribution TEXT,
             primary_domain TEXT,
             subfields TEXT,
+            venue TEXT,
+            venue_year INTEGER,
+            venue_evidence TEXT,
+            venue_checked_at TEXT,
+            arxiv_comment TEXT,
+            journal_ref TEXT,
             published_date TEXT,
             updated_date TEXT,
             categories TEXT,
@@ -59,6 +65,12 @@ def init_db(db_path: Optional[Path] = None) -> None:
         ("tldr", "TEXT"),
         ("primary_domain", "TEXT"),
         ("subfields", "TEXT"),
+        ("venue", "TEXT"),
+        ("venue_year", "INTEGER"),
+        ("venue_evidence", "TEXT"),
+        ("venue_checked_at", "TEXT"),
+        ("arxiv_comment", "TEXT"),
+        ("journal_ref", "TEXT"),
     ):
         try:
             cur.execute(f"ALTER TABLE papers ADD COLUMN {column} {column_type}")
@@ -370,10 +382,21 @@ def init_db(db_path: Optional[Path] = None) -> None:
 
 
 def upsert_paper(conn: sqlite3.Connection, paper: dict) -> None:
+    payload = {
+        "arxiv_comment": None,
+        "journal_ref": None,
+        **paper,
+    }
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO papers (id, title, abstract, published_date, updated_date, categories, pdf_path, source, arxiv_url)
-        VALUES (:id, :title, :abstract, :published_date, :updated_date, :categories, :pdf_path, :source, :arxiv_url)
+        INSERT INTO papers (
+            id, title, abstract, published_date, updated_date, categories,
+            pdf_path, source, arxiv_url, arxiv_comment, journal_ref
+        )
+        VALUES (
+            :id, :title, :abstract, :published_date, :updated_date, :categories,
+            :pdf_path, :source, :arxiv_url, :arxiv_comment, :journal_ref
+        )
         ON CONFLICT(id) DO UPDATE SET
             title=excluded.title,
             abstract=excluded.abstract,
@@ -381,8 +404,10 @@ def upsert_paper(conn: sqlite3.Connection, paper: dict) -> None:
             categories=excluded.categories,
             pdf_path=COALESCE(excluded.pdf_path, papers.pdf_path),
             source=excluded.source,
-            arxiv_url=excluded.arxiv_url
-    """, paper)
+            arxiv_url=excluded.arxiv_url,
+            arxiv_comment=COALESCE(excluded.arxiv_comment, papers.arxiv_comment),
+            journal_ref=COALESCE(excluded.journal_ref, papers.journal_ref)
+    """, payload)
 
 
 def get_paper(conn: sqlite3.Connection, paper_id: str) -> Optional[dict]:

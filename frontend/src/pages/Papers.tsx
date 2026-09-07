@@ -83,7 +83,7 @@ function StatusBadge({
 }
 
 function isAnnotated(paper: Paper) {
-  return Boolean(paper.tldr && paper.core_contribution);
+  return Boolean(paper.tldr && paper.core_contribution && paper.venue_checked_at);
 }
 
 function SelectAllCheckbox({
@@ -415,6 +415,8 @@ export function Papers() {
       paper.abstract,
       paper.tldr,
       paper.core_contribution,
+      paper.venue,
+      paper.venue_year,
       paper.primary_domain,
       ...(paper.subfields || []),
       ...(paper.tags || []).map((tag) => tag.name),
@@ -675,6 +677,7 @@ export function Papers() {
                         <span>·</span>
                         <span className="capitalize">{paper.source}</span>
                         <span>·</span>
+                        {paper.venue && <><strong className="font-medium text-primary">{paper.venue} {paper.venue_year || ""}</strong><span>·</span></>}
                         <span>{paper.published_date}</span>
                       </div>
                     </div>

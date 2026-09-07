@@ -42,7 +42,10 @@ def test_init_db_migrates_annotation_schema(tmp_path):
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(papers)").fetchall()}
     tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
     conn.close()
-    assert {"tldr", "primary_domain", "subfields"} <= columns
+    assert {
+        "tldr", "primary_domain", "subfields", "venue", "venue_year",
+        "venue_evidence", "venue_checked_at", "arxiv_comment", "journal_ref",
+    } <= columns
     assert {"tags", "paper_tags"} <= tables
 
 
@@ -189,8 +192,8 @@ def test_annotate_paper_rejects_missing_abstract(tmp_db, sample_paper):
 def test_annotate_paper_rejects_already_annotated(tmp_db, sample_paper):
     conn = get_connection(tmp_db)
     conn.execute(
-        "UPDATE papers SET tldr = ?, core_contribution = ? WHERE id = ?",
-        ("已有 TLDR", "已有贡献", sample_paper["id"]),
+        "UPDATE papers SET tldr = ?, core_contribution = ?, venue_checked_at = ? WHERE id = ?",
+        ("已有 TLDR", "已有贡献", "2026-01-01T00:00:00", sample_paper["id"]),
     )
     conn.commit()
     conn.close()
@@ -263,6 +266,55 @@ def test_annotate_persists_institution_and_links_team_without_members(tmp_db, sa
 
     assert dict(team) == {"name": "测试实验室", "institution": "测试大学"}
     assert paper_institution["name"] == "测试大学"
+
+
+def test_annotate_persists_venue_with_verifiable_evidence(tmp_db, sample_paper, monkeypatch):
+    evidence = "Accepted at AAAI 2026"
+    conn = get_connection(tmp_db)
+    conn.execute(
+        "UPDATE papers SET arxiv_comment = ? WHERE id = ?",
+        (evidence, sample_paper["id"]),
+    )
+    conn.commit()
+    conn.close()
+
+    mock_response = MagicMock()
+    mock_response.choices[0].message.content = json.dumps(annotation_payload(
+        venue={"name": "AAAI", "year": 2026, "evidence": evidence},
+    ))
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = mock_response
+    monkeypatch.setattr("paper_graph.annotate.get_client", lambda *args, **kwargs: mock_client)
+
+    result = annotate_paper(sample_paper["id"], model="test-model", db_path=tmp_db)
+
+    conn = get_connection(tmp_db)
+    paper = get_paper(conn, sample_paper["id"])
+    conn.close()
+    assert result["venue"] == {"name": "AAAI", "year": 2026, "evidence": evidence}
+    assert paper["venue"] == "AAAI"
+    assert paper["venue_year"] == 2026
+    assert paper["venue_evidence"] == evidence
+    assert paper["venue_checked_at"]
+
+
+def test_annotate_rejects_venue_without_source_evidence(tmp_db, sample_paper, monkeypatch):
+    mock_response = MagicMock()
+    mock_response.choices[0].message.content = json.dumps(annotation_payload(
+        venue={"name": "ICLR", "year": 2026, "evidence": "Accepted at ICLR 2026"},
+    ))
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = mock_response
+    monkeypatch.setattr("paper_graph.annotate.get_client", lambda *args, **kwargs: mock_client)
+
+    result = annotate_paper(sample_paper["id"], model="test-model", db_path=tmp_db)
+
+    conn = get_connection(tmp_db)
+    paper = get_paper(conn, sample_paper["id"])
+    conn.close()
+    assert result["venue"] is None
+    assert paper["venue"] is None
+    assert paper["venue_checked_at"]
 
 
 def test_force_annotation_replaces_team_links_without_duplicate_authors(tmp_db, sample_paper, monkeypatch):
@@ -356,8 +408,8 @@ def test_annotate_all_skips_done(tmp_db, monkeypatch):
         upsert_paper(conn, p)
     # upsert_paper does not update core_contribution, set it explicitly
     conn.execute(
-        "UPDATE papers SET tldr = ?, core_contribution = ? WHERE id = ?",
-        ("已有 TLDR", "已有贡献", "done_paper"),
+        "UPDATE papers SET tldr = ?, core_contribution = ?, venue_checked_at = ? WHERE id = ?",
+        ("已有 TLDR", "已有贡献", "2026-01-01T00:00:00", "done_paper"),
     )
     conn.commit()
     conn.close()

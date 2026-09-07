@@ -2,6 +2,8 @@
 
 import json
 import os
+import re
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -53,12 +55,18 @@ ANNOTATE_PROMPT = """你是一名严谨的学术论文分析助手。只能依�
    - 说明相对已有工作的主要创新，不要重复标题。
 3. 识别主要研究领域、子领域、结构化标签。
 4. 从作者和机构信息中识别研究团队。无法可靠识别时返回空数组，不得猜测团队名称。
+5. 识别正式发表会议或期刊：
+   - 会议年份是会议届次年份，不是 arXiv 上传年份。
+   - 仅当 arXiv 备注、journal reference 或正文中明确出现时返回。
+   - evidence 必须逐字来自提供的材料；投稿中、准备投稿、只有模板名称均返回 null。
 
 论文标题：{title}
 arXiv 分类：{categories}
 摘要：{abstract}
 作者：{authors}
 机构：{institutions}
+arXiv 备注：{arxiv_comment}
+journal reference：{journal_ref}
 正文关键章节节选：
 {paper_excerpt}
 
@@ -74,6 +82,11 @@ arXiv 分类：{categories}
       "type": "task|method|model|dataset|modality|application"
     }}
   ],
+  "venue": {{
+    "name": "会议或期刊规范简称，如 ICLR、AAAI、NeurIPS",
+    "year": 2026,
+    "evidence": "材料中明确说明发表信息的原文"
+  }},
   "teams": [
     {{
       "name": "团队名称（如：中科院计算所曹娟团队）",
@@ -101,6 +114,7 @@ def annotate_paper(paper_id: str, model: Optional[str] = None,
         if (
             (paper.get("tldr") or "").strip()
             and (paper.get("core_contribution") or "").strip()
+            and paper.get("venue_checked_at")
             and not force
         ):
             raise AnnotationError("ANNOTATE_ALREADY_DONE", "论文已完成智能标注，无需重复标注")
@@ -147,6 +161,8 @@ def annotate_paper(paper_id: str, model: Optional[str] = None,
         abstract=(paper.get("abstract") or "")[:3000],
         authors=authors_str,
         institutions=institutions_str,
+        arxiv_comment=paper.get("arxiv_comment") or "未知",
+        journal_ref=paper.get("journal_ref") or "未知",
         paper_excerpt=pdf_excerpt or "未下载 PDF，使用摘要进行标注。",
     )
 
@@ -183,6 +199,14 @@ def annotate_paper(paper_id: str, model: Optional[str] = None,
     primary_domain = str(result.get("primary_domain", "") or "").strip()
     subfields = _normalize_string_list(result.get("subfields", []), max_items=8)
     tags = _normalize_tags(result.get("tags", []))
+    venue = _normalize_venue(
+        result.get("venue"),
+        "\n".join(filter(None, (
+            paper.get("arxiv_comment"),
+            paper.get("journal_ref"),
+            pdf_excerpt,
+        ))),
+    )
     teams = result.get("teams", [])
     if not isinstance(teams, list):
         teams = []
@@ -200,16 +224,18 @@ def annotate_paper(paper_id: str, model: Optional[str] = None,
     result["primary_domain"] = primary_domain
     result["subfields"] = subfields
     result["tags"] = tags
+    result["venue"] = venue
     result["teams"] = teams
 
     # 写回数据库
     conn = get_connection(db_path)
     cur = conn.cursor()
-    from datetime import datetime
     cur.execute(
         """
         UPDATE papers
-        SET tldr = ?, core_contribution = ?, primary_domain = ?, subfields = ?, enhanced_at = ?
+        SET tldr = ?, core_contribution = ?, primary_domain = ?, subfields = ?,
+            venue = ?, venue_year = ?, venue_evidence = ?, venue_checked_at = ?,
+            enhanced_at = ?
         WHERE id = ?
         """,
         (
@@ -217,6 +243,10 @@ def annotate_paper(paper_id: str, model: Optional[str] = None,
             core_contribution,
             primary_domain,
             json.dumps(subfields, ensure_ascii=False),
+            venue["name"] if venue else None,
+            venue["year"] if venue else None,
+            venue["evidence"] if venue else None,
+            datetime.now().isoformat(),
             datetime.now().isoformat(),
             paper_id,
         ),
@@ -333,6 +363,25 @@ def _normalize_tags(value: object) -> list[dict[str, str]]:
     return normalized
 
 
+def _normalize_venue(value: object, evidence_source: str) -> Optional[dict]:
+    """只接受能在输入材料中回查的 venue，阻止无证据推断。"""
+    if not isinstance(value, dict):
+        return None
+    name = str(value.get("name", "") or "").strip()
+    evidence = str(value.get("evidence", "") or "").strip()
+    try:
+        year = int(value.get("year"))
+    except (TypeError, ValueError):
+        return None
+    if not name or len(name) > 80 or not evidence or not 1900 <= year <= 2100:
+        return None
+
+    normalize = lambda text: re.sub(r"\s+", " ", text or "").strip().casefold()
+    if normalize(evidence) not in normalize(evidence_source):
+        return None
+    return {"name": name, "year": year, "evidence": evidence}
+
+
 def annotate_all(model: str = "step-3.7-flash", api_key: Optional[str] = None,
                  base_url: Optional[str] = None, db_path: Optional[Path] = None,
                  project_id: Optional[str] = None) -> int:
@@ -345,6 +394,8 @@ def annotate_all(model: str = "step-3.7-flash", api_key: Optional[str] = None,
         | (df["tldr"] == "")
         | df["core_contribution"].isna()
         | (df["core_contribution"] == "")
+        | df["venue_checked_at"].isna()
+        | (df["venue_checked_at"] == "")
     ]
     count = 0
 

@@ -44,7 +44,7 @@ const PixiGraph = lazy(() =>
 type GraphView = "team" | "paper";
 
 const NODE_COLORS = {
-  team: "#365edc",
+  team: "#2563eb",
   paper: "#64748b",
   default: "#94a3b8",
 };
@@ -71,6 +71,7 @@ function searchableText(node: GraphNode): string {
     node.label,
     node.title,
     node.categories,
+    node.venue,
     node.core_contribution,
     node.description,
     node.institution,
@@ -130,7 +131,18 @@ function DetailPanel({
     setShowPaperList(false);
   }, [node?.id, edge]);
 
-  if (!node && !edge) return null;
+  if (!node && !edge) {
+    return (
+      <aside className="flex w-[340px] shrink-0 flex-col border-l border-border bg-card" aria-label="图谱详情">
+        <div className="border-b border-border px-5 py-4"><h2 className="text-sm font-semibold">节点详情</h2></div>
+        <div className="flex flex-1 flex-col items-center justify-center px-8 text-center text-muted-foreground">
+          <Network className="h-8 w-8" />
+          <p className="mt-3 text-sm font-medium text-foreground">选择一个节点</p>
+          <p className="mt-1 text-xs leading-5">查看团队成员、关联论文与关系证据</p>
+        </div>
+      </aside>
+    );
+  }
 
   if (edge) {
     const source = nodesById.get(String(edge.source));
@@ -187,7 +199,10 @@ function DetailPanel({
           {(node!.papers || []).map((paper) => (
             <button key={paper.id} className="group w-full px-4 py-4 text-left hover:bg-muted/60" onClick={() => onOpenPaper(paper.id)}>
               <span className="block text-sm font-medium leading-5 group-hover:text-primary">{paper.title}</span>
-              <span className="mt-2 block text-xs text-muted-foreground">{paper.date || "日期未知"}</span>
+              <span className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                {paper.venue && <strong className="text-primary">{paper.venue} {paper.venue_year || ""}</strong>}
+                <span>{paper.date || "日期未知"}</span>
+              </span>
             </button>
           ))}
         </div>
@@ -220,6 +235,7 @@ function DetailPanel({
           </div>
         )}
         {node!.published_date && <p className="flex items-center gap-2 text-muted-foreground"><CalendarDays className="h-4 w-4" />{node!.published_date}</p>}
+        {node!.venue && <div><p className="text-xs font-medium text-muted-foreground">发表 venue</p><p className="mt-1 font-semibold text-primary">{node!.venue} {node!.venue_year || ""}</p></div>}
         {node!.institution && <div><p className="text-xs font-medium text-muted-foreground">主要机构</p><p className="mt-1 leading-6">{node!.institution}</p></div>}
         {!!node!.authors?.length && <div><p className="text-xs font-medium text-muted-foreground">作者</p><p className="mt-1 leading-6">{node!.authors.join("、")}</p></div>}
         {!!node!.institutions?.length && <div><p className="text-xs font-medium text-muted-foreground">机构</p><p className="mt-1 leading-6">{node!.institutions.join("、")}</p></div>}
@@ -264,10 +280,6 @@ export function Graph() {
       const normalizedTeam = normalizeGraphData(team);
       setTeamData(normalizedTeam);
       setPaperData(normalizeGraphData(paper));
-      const initialTeam = normalizedTeam.nodes
-        .filter((node) => node.group === "team")
-        .sort((a, b) => (b.paper_count || 0) - (a.paper_count || 0))[0];
-      setSelectedNode(initialTeam || null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
     } finally {
@@ -342,7 +354,7 @@ export function Graph() {
   };
 
   const selectNode = (node: GraphNode) => {
-    setSelectedNode(node);
+    setSelectedNode((current) => current?.id === node.id ? null : node);
     setSelectedEdge(null);
   };
   const selectEdge = (edge: GraphEdge) => {
@@ -376,6 +388,7 @@ export function Graph() {
                 nodeColor={(node) => NODE_COLORS[node.group as keyof typeof NODE_COLORS] || NODE_COLORS.default}
                 onNodeClick={selectNode}
                 onEdgeClick={selectEdge}
+                onBackgroundClick={() => { setSelectedNode(null); setSelectedEdge(null); }}
                 matchedNodeIds={matchedNodeIds}
                 focusedNodeIds={focusedNodeIds}
                 selectedNodeId={selectedNode?.id}
@@ -425,10 +438,7 @@ export function Graph() {
       <Tabs value={view} onValueChange={(value) => {
         const nextView = value as GraphView;
         setView(nextView);
-        const initialTeam = teamData?.nodes
-          .filter((node) => node.group === "team")
-          .sort((a, b) => (b.paper_count || 0) - (a.paper_count || 0))[0];
-        setSelectedNode(nextView === "team" ? initialTeam || null : null);
+        setSelectedNode(null);
         setSelectedEdge(null);
       }} className="w-full">
         <div className="flex items-center justify-between gap-4">
