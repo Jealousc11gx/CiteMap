@@ -361,7 +361,8 @@ def build_paper_graph(
     # 加载论文节点及其可用于详情展示的元数据。
     cur.execute(f"""
         SELECT p.id, p.title, p.published_date, p.core_contribution,
-               p.categories, p.arxiv_url, p.source, p.venue, p.venue_year
+               p.categories, p.arxiv_url, p.source, p.venue, p.venue_year,
+               p.citation_count, p.reference_count, p.citation_synced_at
         FROM papers p
         {paper_join}
         {paper_where}
@@ -379,6 +380,9 @@ def build_paper_graph(
             source=row["source"],
             venue=row["venue"],
             venue_year=row["venue_year"],
+            citation_count=row["citation_count"],
+            reference_count=row["reference_count"],
+            citation_synced_at=row["citation_synced_at"],
             authors=[],
             institutions=[],
         )

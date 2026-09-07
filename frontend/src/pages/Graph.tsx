@@ -18,6 +18,8 @@ import {
   Library,
   Loader2,
   Network,
+  GitFork,
+  Quote,
   RefreshCcw,
   RotateCcw,
   Search,
@@ -33,7 +35,13 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ErrorAlert } from "@/components/ErrorAlert";
 import { useProject } from "@/contexts/ProjectContext";
-import { fetchGraphPaper, fetchGraphTeamEgo } from "@/services/api";
+import {
+  fetchGraphCitation,
+  fetchGraphPaper,
+  fetchGraphSimilarity,
+  fetchGraphTeamEgo,
+  syncPaperCitations,
+} from "@/services/api";
 import type { GraphData, GraphEdge, GraphNode } from "@/types";
 import type { PixiGraphHandle } from "@/components/PixiGraph";
 
@@ -42,10 +50,12 @@ const PixiGraph = lazy(() =>
 );
 
 type GraphView = "team" | "paper";
+type PaperRelationMode = "metadata" | "citation" | "similarity";
 
 const NODE_COLORS = {
   team: "#2563eb",
   paper: "#64748b",
+  seed: "#2563eb",
   default: "#94a3b8",
 };
 
@@ -87,8 +97,10 @@ function categoriesOf(node: GraphNode): string[] {
   return (node.categories || "").split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
 }
 
-function edgeKey(edge: Pick<GraphEdge, "source" | "target">): string {
-  return [String(edge.source), String(edge.target)].sort().join("::");
+function edgeKey(edge: Pick<GraphEdge, "source" | "target" | "directed">): string {
+  return edge.directed
+    ? `${String(edge.source)}->${String(edge.target)}`
+    : [String(edge.source), String(edge.target)].sort().join("::");
 }
 
 function EmptyGraph({ view, onManage }: { view: GraphView; onManage: () => void }) {
@@ -160,9 +172,14 @@ function DetailPanel({
         </div>
         <div className="space-y-5 p-4 text-sm">
           <div>
-            <p className="text-xs font-medium text-muted-foreground">关系强度</p>
-            <p className="mt-1 font-mono text-lg font-semibold">{edge.weight || 1}</p>
+            <p className="text-xs font-medium text-muted-foreground">
+              {edge.similarity !== undefined ? "归一化相似度" : edge.directed ? "关系类型" : "关系强度"}
+            </p>
+            <p className="mt-1 font-mono text-lg font-semibold">
+              {edge.similarity !== undefined ? `${Math.round(edge.similarity * 100)}%` : edge.directed ? "引用" : edge.weight || 1}
+            </p>
           </div>
+          {edge.shared_references !== undefined && <div><p className="text-xs font-medium text-muted-foreground">共同参考文献</p><p className="mt-1 font-mono text-lg font-semibold">{edge.shared_references}</p></div>}
           {!!edge.shared_authors?.length && (
             <div><p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Users className="h-3.5 w-3.5" />共享作者</p><p className="mt-2 leading-6">{edge.shared_authors.join("、")}</p></div>
           )}
@@ -230,8 +247,10 @@ function DetailPanel({
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">
-            <div><p className="text-xs text-muted-foreground">直接关系</p><p className="mt-1 font-mono text-lg font-semibold">{node!.degree || 0}</p></div>
-            <div><p className="text-xs text-muted-foreground">关系强度</p><p className="mt-1 font-mono text-lg font-semibold">{node!.weighted_degree || 0}</p></div>
+            {node!.similarity_score !== undefined ? <div><p className="text-xs text-muted-foreground">与种子相似度</p><p className="mt-1 font-mono text-lg font-semibold">{Math.round(node!.similarity_score * 100)}%</p></div> : <div><p className="text-xs text-muted-foreground">直接关系</p><p className="mt-1 font-mono text-lg font-semibold">{node!.degree || 0}</p></div>}
+            <div><p className="text-xs text-muted-foreground">引用数</p><p className="mt-1 font-mono text-lg font-semibold">{node!.citation_count ?? "未同步"}</p></div>
+            <div><p className="text-xs text-muted-foreground">参考文献</p><p className="mt-1 font-mono text-lg font-semibold">{node!.reference_count ?? "未知"}</p></div>
+            {node!.weighted_degree !== undefined && <div><p className="text-xs text-muted-foreground">关系强度</p><p className="mt-1 font-mono text-lg font-semibold">{node!.weighted_degree}</p></div>}
           </div>
         )}
         {node!.published_date && <p className="flex items-center gap-2 text-muted-foreground"><CalendarDays className="h-4 w-4" />{node!.published_date}</p>}
@@ -242,7 +261,8 @@ function DetailPanel({
         {!!node!.members?.length && <div><p className="text-xs font-medium text-muted-foreground">成员</p><p className="mt-1 leading-6">{node!.members.join("、")}</p></div>}
         {node!.core_contribution && <div><p className="text-xs font-medium text-muted-foreground">核心贡献</p><p className="mt-1 leading-6">{node!.core_contribution}</p></div>}
         {isTeam && !!node!.papers?.length && <Button className="w-full" onClick={() => setShowPaperList(true)}><FileText />查看关联论文</Button>}
-        {!isTeam && <Button className="w-full" size="sm" onClick={() => onOpenPaper(paperId)}><ExternalLink />查看论文详情</Button>}
+        {!isTeam && node!.paper_id && <Button className="w-full" size="sm" onClick={() => onOpenPaper(paperId)}><ExternalLink />查看论文详情</Button>}
+        {!isTeam && !node!.paper_id && node!.scholar_id && <Button className="w-full" size="sm" variant="outline" onClick={() => window.open(`https://www.semanticscholar.org/paper/${node!.scholar_id}`, "_blank", "noopener,noreferrer")}><ExternalLink />在 Semantic Scholar 查看</Button>}
       </div>
     </aside>
   );
@@ -255,6 +275,11 @@ export function Graph() {
   const [view, setView] = useState<GraphView>("team");
   const [teamData, setTeamData] = useState<GraphData | null>(null);
   const [paperData, setPaperData] = useState<GraphData | null>(null);
+  const [citationData, setCitationData] = useState<GraphData | null>(null);
+  const [similarityData, setSimilarityData] = useState<GraphData | null>(null);
+  const [paperRelationMode, setPaperRelationMode] = useState<PaperRelationMode>("metadata");
+  const [seedPaperId, setSeedPaperId] = useState("");
+  const [syncingCitations, setSyncingCitations] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -296,30 +321,89 @@ export function Graph() {
     void loadGraphs();
   }, [loadGraphs]);
 
-  const rawData = view === "team" ? teamData : paperData;
+  useEffect(() => {
+    const nodes = paperData?.nodes || [];
+    if (!nodes.length) {
+      setSeedPaperId("");
+      return;
+    }
+    if (!nodes.some((node) => node.id === seedPaperId)) setSeedPaperId(nodes[0].id);
+  }, [paperData, seedPaperId]);
+
+  const loadPaperRelation = useCallback(async (mode: PaperRelationMode, paperId: string) => {
+    if (mode === "metadata" || !paperId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = normalizeGraphData(
+        mode === "citation" ? await fetchGraphCitation(paperId) : await fetchGraphSimilarity(paperId),
+      );
+      if (mode === "citation") setCitationData(data);
+      else setSimilarityData(data);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (view === "paper" && paperRelationMode !== "metadata" && seedPaperId) {
+      void loadPaperRelation(paperRelationMode, seedPaperId);
+    }
+  }, [view, paperRelationMode, seedPaperId, loadPaperRelation]);
+
+  const syncCitations = async () => {
+    if (!seedPaperId) return;
+    setSyncingCitations(true);
+    setError(null);
+    try {
+      await syncPaperCitations(seedPaperId);
+      const [citation, similarity, paper] = await Promise.all([
+        fetchGraphCitation(seedPaperId),
+        fetchGraphSimilarity(seedPaperId),
+        fetchGraphPaper(activeProject?.id),
+      ]);
+      setCitationData(normalizeGraphData(citation));
+      setSimilarityData(normalizeGraphData(similarity));
+      setPaperData(normalizeGraphData(paper));
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : String(syncError));
+    } finally {
+      setSyncingCitations(false);
+    }
+  };
+
+  const rawData = view === "team"
+    ? teamData
+    : paperRelationMode === "citation"
+      ? citationData
+      : paperRelationMode === "similarity"
+        ? similarityData
+        : paperData;
   const years = useMemo(() => Array.from(new Set((paperData?.nodes || []).map((node) => node.published_date?.slice(0, 4)).filter(Boolean) as string[])).sort().reverse(), [paperData]);
   const categories = useMemo(() => Array.from(new Set((paperData?.nodes || []).flatMap(categoriesOf))).sort(), [paperData]);
 
   const visibleData = useMemo<GraphData | null>(() => {
     if (!rawData) return null;
     let nodes = rawData.nodes.filter((node) => {
-      if (view !== "paper") return true;
+      if (view !== "paper" || paperRelationMode !== "metadata") return true;
       if (yearFilter !== "all" && node.published_date?.slice(0, 4) !== yearFilter) return false;
       return categoryFilter === "all" || categoriesOf(node).includes(categoryFilter);
     });
     let nodeIds = new Set(nodes.map((node) => node.id));
     const edges = rawData.edges.filter((edge) => {
       if (!nodeIds.has(String(edge.source)) || !nodeIds.has(String(edge.target))) return false;
-      if (view !== "paper") return true;
+      if (view !== "paper" || paperRelationMode !== "metadata") return true;
       const types = edge.relation_types || [];
       return (authorRelations && types.includes("author")) || (institutionRelations && types.includes("institution"));
     });
-    if (view === "paper" && !showIsolatedNodes) {
+    if (view === "paper" && paperRelationMode === "metadata" && !showIsolatedNodes) {
       nodeIds = new Set(edges.flatMap((edge) => [String(edge.source), String(edge.target)]));
       nodes = nodes.filter((node) => nodeIds.has(node.id));
     }
     return { nodes, edges };
-  }, [rawData, view, yearFilter, categoryFilter, authorRelations, institutionRelations, showIsolatedNodes]);
+  }, [rawData, view, paperRelationMode, yearFilter, categoryFilter, authorRelations, institutionRelations, showIsolatedNodes]);
 
   const nodesById = useMemo(() => new Map((visibleData?.nodes || []).map((node) => [node.id, node])), [visibleData]);
   useEffect(() => {
@@ -373,19 +457,22 @@ export function Graph() {
       return <Card><CardContent className="flex min-h-[440px] items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />正在构建图谱...</CardContent></Card>;
     }
     if (!activeProject || !rawData) return null;
+    if (view === "paper" && paperRelationMode !== "metadata" && rawData.nodes.length === 0) {
+      return <Card><CardContent className="flex min-h-[440px] flex-col items-center justify-center text-center"><Quote className="h-8 w-8 text-muted-foreground" /><p className="mt-4 text-sm font-medium">尚未同步这篇论文的引用数据</p><p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">同步后生成真实引用方向、引用数及基于共同参考文献的相似网络。</p><Button size="sm" className="mt-4" onClick={() => void syncCitations()} disabled={syncingCitations}>{syncingCitations ? <Loader2 className="animate-spin" /> : <RefreshCcw />}同步引用数据</Button></CardContent></Card>;
+    }
     if (rawData.nodes.length === 0) return <EmptyGraph view={view} onManage={() => navigate("/papers")} />;
     if (!visibleData?.nodes.length) {
       return <Card><CardContent className="flex min-h-[440px] flex-col items-center justify-center text-center"><p className="text-sm font-medium">当前筛选条件没有可显示的节点</p><Button variant="outline" size="sm" className="mt-4" onClick={resetView}>重置筛选</Button></CardContent></Card>;
     }
     return (
-      <Card className="flex h-[calc(100vh-12.75rem)] min-h-[560px] flex-col overflow-hidden border-border">
+      <Card className="flex h-[calc(100vh-15rem)] min-h-[460px] flex-col overflow-hidden border-border">
         <div className="flex min-h-0 flex-1">
           <div className="relative min-w-0 flex-1 overflow-hidden bg-card/50">
             <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />正在加载图引擎...</div>}>
               <PixiGraph
                 ref={graphRef}
                 data={visibleData!}
-                nodeColor={(node) => NODE_COLORS[node.group as keyof typeof NODE_COLORS] || NODE_COLORS.default}
+                nodeColor={(node) => node.is_seed ? NODE_COLORS.seed : NODE_COLORS[node.group as keyof typeof NODE_COLORS] || NODE_COLORS.default}
                 onNodeClick={selectNode}
                 onEdgeClick={selectEdge}
                 onBackgroundClick={() => { setSelectedNode(null); setSelectedEdge(null); }}
@@ -407,14 +494,18 @@ export function Graph() {
                   <span className="flex items-center gap-1.5"><i className="h-3 w-3 rounded-full bg-primary" />推断团队</span>
                   <span className="flex items-center gap-1.5"><i className="h-3 w-3 rounded-full border border-slate-300 bg-white dark:bg-slate-800" />关联论文</span>
                 </>
-              ) : (
+              ) : paperRelationMode === "metadata" ? (
                 <>
                   <span className="flex items-center gap-1.5"><i className="h-0.5 w-5 bg-slate-400" />共同作者</span>
                   <span className="flex items-center gap-1.5"><i className="h-0.5 w-5 bg-teal-600 dark:bg-teal-400" />共同机构</span>
                   <span className="flex items-center gap-1.5"><i className="h-0.5 w-5 bg-indigo-600 dark:bg-indigo-400" />两者均有</span>
                 </>
+              ) : paperRelationMode === "citation" ? (
+                <><span className="flex items-center gap-1.5"><i className="h-0.5 w-5 bg-sky-600 dark:bg-sky-400" />箭头指向被引用论文</span></>
+              ) : (
+                <><span className="flex items-center gap-1.5"><i className="h-0.5 w-5 bg-teal-600 dark:bg-teal-400" />共享参考文献相似度</span></>
               )}
-              <span>{view === "paper" ? "距离不表示研究相似度" : "节点大小表示关系强度"}</span>
+              <span>{view === "paper" && paperRelationMode === "similarity" ? "距离越近通常越相似" : view === "paper" ? "节点大小表示引用数" : "节点大小表示关系强度"}</span>
             </div>
             <div className="absolute bottom-3 right-3 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm">
               节点 {graphStats.nodes} · 关系 {graphStats.edges} · 孤立 {graphStats.isolated}
@@ -433,7 +524,7 @@ export function Graph() {
         <Button variant="outline" size="sm" onClick={() => void loadGraphs()} disabled={loading}><RefreshCcw className={loading ? "animate-spin" : ""} />刷新数据</Button>
       </div>
 
-      {(error || projectError) && <ErrorAlert title="图谱加载失败" message={error || projectError || "未知错误"} suggestion="检查后端服务后重试。" onRetry={() => void (activeProject ? loadGraphs() : refreshProjects())} />}
+      {(error || projectError) && <ErrorAlert title="图谱加载失败" message={error || projectError || "未知错误"} suggestion={error?.includes("Semantic Scholar") ? "等待限流恢复，或配置 Semantic Scholar API Key 后再同步。" : "检查后端服务后重试。"} onRetry={() => void (error?.includes("Semantic Scholar") ? syncCitations() : activeProject ? loadGraphs() : refreshProjects())} />}
 
       <Tabs value={view} onValueChange={(value) => {
         const nextView = value as GraphView;
@@ -441,13 +532,18 @@ export function Graph() {
         setSelectedNode(null);
         setSelectedEdge(null);
       }} className="w-full">
-        <div className="flex items-center justify-between gap-4">
-          <TabsList><TabsTrigger value="team">团队视图</TabsTrigger><TabsTrigger value="paper">论文关系</TabsTrigger></TabsList>
-          <div className="flex items-center gap-2">
-            <div className="relative w-72"><Search className="absolute left-3 top-2 h-4 w-4 text-muted-foreground" /><Input placeholder="搜索标题、作者、机构..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-8 pl-9 pr-16" aria-label="搜索图谱节点" />{searchQuery && <span className="absolute right-2 top-2 text-xs tabular-nums text-muted-foreground">{matchedNodeIds.size} 项</span>}</div>
-            {view === "paper" && <select className="h-8 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={yearFilter} onChange={(event) => setYearFilter(event.target.value)} aria-label="按年份筛选"><option value="all">全部年份</option>{years.map((year) => <option key={year} value={year}>{year}</option>)}</select>}
-            {view === "paper" && <select className="h-8 max-w-40 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} aria-label="按领域筛选"><option value="all">全部领域</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select>}
-            {view === "paper" && <div className="flex h-8 items-center rounded-md border border-input bg-background p-0.5" aria-label="关系类型筛选"><button type="button" className={`h-6 rounded px-2 text-xs ${authorRelations ? "bg-secondary text-foreground" : "text-muted-foreground"}`} onClick={() => setAuthorRelations((value) => !value)} aria-pressed={authorRelations}>作者</button><button type="button" className={`h-6 rounded px-2 text-xs ${institutionRelations ? "bg-secondary text-foreground" : "text-muted-foreground"}`} onClick={() => setInstitutionRelations((value) => !value)} aria-pressed={institutionRelations}>机构</button><button type="button" className={`h-6 rounded px-2 text-xs ${showIsolatedNodes ? "bg-secondary text-foreground" : "text-muted-foreground"}`} onClick={() => setShowIsolatedNodes((value) => !value)} aria-pressed={showIsolatedNodes}>孤立节点</button></div>}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-4">
+            <TabsList><TabsTrigger value="team">团队视图</TabsTrigger><TabsTrigger value="paper">论文关系</TabsTrigger></TabsList>
+            {view === "paper" && <div className="flex h-8 items-center rounded-md border border-input bg-background p-0.5" aria-label="论文关系模式"><button type="button" className={`h-6 rounded px-2 text-xs ${paperRelationMode === "metadata" ? "bg-secondary text-foreground" : "text-muted-foreground"}`} onClick={() => setPaperRelationMode("metadata")}><Users className="mr-1 inline h-3 w-3" />作者/机构</button><button type="button" className={`h-6 rounded px-2 text-xs ${paperRelationMode === "citation" ? "bg-secondary text-foreground" : "text-muted-foreground"}`} onClick={() => setPaperRelationMode("citation")}><Quote className="mr-1 inline h-3 w-3" />引用网络</button><button type="button" className={`h-6 rounded px-2 text-xs ${paperRelationMode === "similarity" ? "bg-secondary text-foreground" : "text-muted-foreground"}`} onClick={() => setPaperRelationMode("similarity")}><GitFork className="mr-1 inline h-3 w-3" />相似论文</button></div>}
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            {view === "paper" && paperRelationMode !== "metadata" && <select className="h-8 max-w-56 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={seedPaperId} onChange={(event) => { setSeedPaperId(event.target.value); setSelectedNode(null); setSelectedEdge(null); }} aria-label="选择种子论文">{(paperData?.nodes || []).map((node) => <option key={node.id} value={node.id}>{node.title || node.label}</option>)}</select>}
+            {view === "paper" && paperRelationMode !== "metadata" && <Button variant="outline" size="sm" className="h-8" onClick={() => void syncCitations()} disabled={!seedPaperId || syncingCitations}>{syncingCitations ? <Loader2 className="animate-spin" /> : <RefreshCcw />}同步引用</Button>}
+            <div className="relative w-64"><Search className="absolute left-3 top-2 h-4 w-4 text-muted-foreground" /><Input placeholder="搜索标题、作者、机构..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-8 pl-9 pr-16" aria-label="搜索图谱节点" />{searchQuery && <span className="absolute right-2 top-2 text-xs tabular-nums text-muted-foreground">{matchedNodeIds.size} 项</span>}</div>
+            {view === "paper" && paperRelationMode === "metadata" && <select className="h-8 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={yearFilter} onChange={(event) => setYearFilter(event.target.value)} aria-label="按年份筛选"><option value="all">全部年份</option>{years.map((year) => <option key={year} value={year}>{year}</option>)}</select>}
+            {view === "paper" && paperRelationMode === "metadata" && <select className="h-8 max-w-40 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} aria-label="按领域筛选"><option value="all">全部领域</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select>}
+            {view === "paper" && paperRelationMode === "metadata" && <div className="flex h-8 shrink-0 items-center rounded-md border border-input bg-background p-0.5" aria-label="关系类型筛选"><button type="button" className={`h-6 whitespace-nowrap rounded px-2 text-xs ${authorRelations ? "bg-secondary text-foreground" : "text-muted-foreground"}`} onClick={() => setAuthorRelations((value) => !value)} aria-pressed={authorRelations}>作者</button><button type="button" className={`h-6 whitespace-nowrap rounded px-2 text-xs ${institutionRelations ? "bg-secondary text-foreground" : "text-muted-foreground"}`} onClick={() => setInstitutionRelations((value) => !value)} aria-pressed={institutionRelations}>机构</button><button type="button" className={`h-6 whitespace-nowrap rounded px-2 text-xs ${showIsolatedNodes ? "bg-secondary text-foreground" : "text-muted-foreground"}`} onClick={() => setShowIsolatedNodes((value) => !value)} aria-pressed={showIsolatedNodes}>孤立节点</button></div>}
             <Button variant="outline" size="icon-sm" onClick={resetView} title="重置图谱" aria-label="重置图谱"><RotateCcw /></Button>
           </div>
         </div>

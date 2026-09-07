@@ -15,6 +15,9 @@ import {
   fetchGraphTeam,
   fetchGraphTeamEgo,
   fetchGraphPaper,
+  fetchGraphCitation,
+  fetchGraphSimilarity,
+  syncPaperCitations,
   listNotes,
   getNote,
   saveNote,
@@ -414,6 +417,31 @@ describe('API services', () => {
       mockFetch.mockResolvedValue({ ok: false });
 
       await expect(fetchGraphPaper()).rejects.toThrow('Failed to fetch paper graph');
+    });
+  });
+
+  describe('citation graph APIs', () => {
+    it('should sync citations and load both citation graph modes', async () => {
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ citation_count: 12 }) })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ nodes: [], edges: [] }) })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ nodes: [], edges: [] }) });
+
+      await expect(syncPaperCitations('paper 1')).resolves.toEqual({ citation_count: 12 });
+      await expect(fetchGraphCitation('paper 1')).resolves.toEqual({ nodes: [], edges: [] });
+      await expect(fetchGraphSimilarity('paper 1')).resolves.toEqual({ nodes: [], edges: [] });
+      expect(mockFetch).toHaveBeenNthCalledWith(1, '/api/papers/paper%201/sync-citations', { method: 'POST' });
+      expect(mockFetch).toHaveBeenNthCalledWith(2, '/api/graph/citation?paper_id=paper%201');
+      expect(mockFetch).toHaveBeenNthCalledWith(3, '/api/graph/similarity?paper_id=paper%201');
+    });
+
+    it('should expose the citation sync error detail', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        json: () => Promise.resolve({ detail: 'Semantic Scholar 请求频率受限' }),
+      });
+
+      await expect(syncPaperCitations('paper')).rejects.toThrow('Semantic Scholar 请求频率受限');
     });
   });
 

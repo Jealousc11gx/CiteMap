@@ -213,6 +213,27 @@ export async function fetchGraphPaper(projectId?: string) {
   return res.json();
 }
 
+export async function syncPaperCitations(paperId: string) {
+  const res = await fetch(`${API_BASE}/papers/${encodeURIComponent(paperId)}/sync-citations`, { method: "POST" });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => null))?.detail;
+    throw new Error(detail || "Failed to sync citations");
+  }
+  return res.json();
+}
+
+export async function fetchGraphCitation(paperId: string) {
+  const res = await fetch(`${API_BASE}/graph/citation?paper_id=${encodeURIComponent(paperId)}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || "Failed to fetch citation graph");
+  return res.json();
+}
+
+export async function fetchGraphSimilarity(paperId: string) {
+  const res = await fetch(`${API_BASE}/graph/similarity?paper_id=${encodeURIComponent(paperId)}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || "Failed to fetch similarity graph");
+  return res.json();
+}
+
 export async function listChatSessions(projectId?: string): Promise<ChatSession[]> {
   const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
   const res = await fetch(`${API_BASE}/chat/sessions${query}`);

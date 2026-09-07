@@ -28,6 +28,7 @@ import {
   Sparkles,
   AlertCircle,
   Pencil,
+  Quote,
 } from "lucide-react";
 
 export function PaperDetail() {
@@ -272,6 +273,10 @@ export function PaperDetail() {
           <span className="flex items-center gap-1">
             <Calendar className="h-4 w-4" />
             {paper.published_date}
+          </span>
+          <span className="flex items-center gap-1" title={paper.citation_synced_at ? `同步于 ${paper.citation_synced_at}` : "尚未同步引用数据"}>
+            <Quote className="h-4 w-4" />
+            {paper.citation_count ?? "—"} 次引用
           </span>
           {hasPdf ? (
             <span className="flex items-center gap-1 text-primary">

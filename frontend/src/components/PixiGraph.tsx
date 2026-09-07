@@ -79,16 +79,22 @@ function clamp(value: number, min: number, max: number): number {
 
 function getNodeRadius(node: GraphNode): number {
   const base = node.group === "team" ? 32 : 15;
+  if (node.citation_count !== undefined && node.citation_count !== null) {
+    return base + Math.min(10, Math.log10(node.citation_count + 1) * 2.8);
+  }
   const weightedDegree = Math.max(0, node.weighted_degree || node.degree || 0);
   return base + Math.min(node.group === "team" ? 10 : 5, Math.log2(weightedDegree + 1) * 2.2);
 }
 
-export function getEdgeKey(edge: Pick<GraphEdge, "source" | "target">): string {
+export function getEdgeKey(edge: Pick<GraphEdge, "source" | "target" | "directed">): string {
+  if (edge.directed) return `${String(edge.source)}->${String(edge.target)}`;
   return [String(edge.source), String(edge.target)].sort().join("::");
 }
 
 function getRelationColor(edge: GraphEdge, isDark: boolean): number {
   const types = edge.relation_types || [];
+  if (types.includes("citation")) return isDark ? 0x38bdf8 : 0x0284c7;
+  if (types.includes("similarity")) return isDark ? 0x2dd4bf : 0x0f766e;
   if (types.includes("collaboration")) return isDark ? 0x60a5fa : 0x2563eb;
   if (types.includes("produced")) return isDark ? 0x64748b : 0x94a3b8;
   if (types.includes("author") && types.includes("institution")) return isDark ? 0x818cf8 : 0x4f46e5;
@@ -566,14 +572,16 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
     const halo = new Graphics();
     const body = new Graphics();
     const isTeam = node.group === "team";
+    const isSeed = Boolean(node.is_seed);
     const color = isTeam
       ? colorToNumber(nodeColor(node))
+      : isSeed ? colorToNumber(nodeColor(node))
       : isDark ? 0x1e293b : 0xffffff;
 
     halo.circle(0, 0, radius + 7).stroke({ color: isDark ? 0x93c5fd : 0x1d4ed8, width: 3, alpha: 0.95 });
     halo.visible = false;
-    body.circle(0, 0, radius).fill({ color, alpha: isTeam ? 0.96 : 1 });
-    body.circle(0, 0, radius).stroke({ color: isTeam ? color : strokeColor, width: isTeam ? 2 : 1.5, alpha: 0.9 });
+    body.circle(0, 0, radius).fill({ color, alpha: isTeam ? 0.96 : isSeed ? 0.14 : 1 });
+    body.circle(0, 0, radius).stroke({ color: isTeam || isSeed ? color : strokeColor, width: isTeam || isSeed ? 2 : 1.5, alpha: 0.9 });
     if (isTeam) body.circle(0, 0, radius + 5).stroke({ color, width: 1.5, alpha: 0.2 });
 
     const displayLabel = truncateLabel(node.label || node.id, isTeam ? 22 : 18);
@@ -661,6 +669,25 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
       edgeView.line.clear();
       edgeView.line.moveTo(sx, sy).lineTo(tx, ty).stroke({ width: 12, color: relationColor, alpha: 0.001 });
       edgeView.line.moveTo(sx, sy).lineTo(tx, ty).stroke({ width, color: relationColor, alpha });
+      if (edgeView.edge.directed) {
+        const dx = tx - sx;
+        const dy = ty - sy;
+        const length = Math.hypot(dx, dy) || 1;
+        const ux = dx / length;
+        const uy = dy / length;
+        const targetView = nodeViewsRef.current.get(edgeView.targetId);
+        const tipOffset = targetView ? getNodeRadius(targetView.node) + 3 : 18;
+        const tipX = tx - ux * tipOffset;
+        const tipY = ty - uy * tipOffset;
+        const wing = 8;
+        const spread = 4.5;
+        edgeView.line
+          .moveTo(tipX, tipY)
+          .lineTo(tipX - ux * wing - uy * spread, tipY - uy * wing + ux * spread)
+          .moveTo(tipX, tipY)
+          .lineTo(tipX - ux * wing + uy * spread, tipY - uy * wing - ux * spread)
+          .stroke({ width, color: relationColor, alpha });
+      }
     }
 
     const occupiedLabelRects: Array<{ left: number; top: number; right: number; bottom: number }> = [];

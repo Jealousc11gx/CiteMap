@@ -49,6 +49,12 @@ from paper_graph.radar_sync import RadarRemoteClient, flush_pending_operations, 
 from paper_graph.ingest import ingest_local_pdf, ingest_arxiv_id, search_arxiv, search_arxiv_only, _download_arxiv_pdf
 from paper_graph.annotate import annotate_paper, annotate_all, get_default_model, get_client, AnnotationError
 from paper_graph.graph import build_paper_graph, build_team_ego_graph, build_team_graph
+from paper_graph.citations import (
+    CitationSyncError,
+    build_citation_graph,
+    build_similarity_graph,
+    sync_citations,
+)
 from paper_graph.notes import list_notes, get_note, save_note as notes_save, create_note_template, delete_note as notes_delete
 from paper_graph.chat_agent import run_agent, run_agent_stream
 import arxiv
@@ -816,6 +822,33 @@ def api_graph_paper(project_id: Optional[str] = None):
     if project_id:
         _require_project(project_id)
     graph = build_paper_graph(DB_PATH, project_id=project_id)
+    return {
+        "nodes": [{"id": n, **graph.nodes[n]} for n in graph.nodes()],
+        "edges": [{"source": u, "target": v, **graph.edges[u, v]} for u, v in graph.edges()],
+    }
+
+
+@app.post("/api/papers/{paper_id}/sync-citations")
+def api_sync_citations(paper_id: str):
+    """从 Semantic Scholar 同步引用数及一阶引用邻域。"""
+    try:
+        return sync_citations(paper_id, DB_PATH)
+    except CitationSyncError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@app.get("/api/graph/citation")
+def api_graph_citation(paper_id: str):
+    graph = build_citation_graph(paper_id, DB_PATH)
+    return {
+        "nodes": [{"id": n, **graph.nodes[n]} for n in graph.nodes()],
+        "edges": [{"source": u, "target": v, **graph.edges[u, v]} for u, v in graph.edges()],
+    }
+
+
+@app.get("/api/graph/similarity")
+def api_graph_similarity(paper_id: str):
+    graph = build_similarity_graph(paper_id, DB_PATH)
     return {
         "nodes": [{"id": n, **graph.nodes[n]} for n in graph.nodes()],
         "edges": [{"source": u, "target": v, **graph.edges[u, v]} for u, v in graph.edges()],

@@ -40,6 +40,10 @@ def init_db(db_path: Optional[Path] = None) -> None:
             venue_source TEXT,
             arxiv_comment TEXT,
             journal_ref TEXT,
+            citation_count INTEGER,
+            reference_count INTEGER,
+            citation_synced_at TEXT,
+            semantic_scholar_id TEXT,
             published_date TEXT,
             updated_date TEXT,
             categories TEXT,
@@ -73,6 +77,10 @@ def init_db(db_path: Optional[Path] = None) -> None:
         ("venue_source", "TEXT"),
         ("arxiv_comment", "TEXT"),
         ("journal_ref", "TEXT"),
+        ("citation_count", "INTEGER"),
+        ("reference_count", "INTEGER"),
+        ("citation_synced_at", "TEXT"),
+        ("semantic_scholar_id", "TEXT"),
     ):
         try:
             cur.execute(f"ALTER TABLE papers ADD COLUMN {column} {column_type}")
@@ -153,6 +161,34 @@ def init_db(db_path: Optional[Path] = None) -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_papers_published ON papers(published_date)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_paper_authors_paper ON paper_authors(paper_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_paper_authors_author ON paper_authors(author_id)")
+
+    # Semantic Scholar 元数据与引用边保存在本地，外部论文不会进入用户论文库。
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS citation_papers (
+            scholar_id TEXT PRIMARY KEY,
+            local_paper_id TEXT UNIQUE,
+            title TEXT NOT NULL DEFAULT '',
+            year INTEGER,
+            venue TEXT,
+            citation_count INTEGER,
+            reference_count INTEGER,
+            external_ids TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (local_paper_id) REFERENCES papers(id) ON DELETE SET NULL
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS citation_edges (
+            citing_id TEXT NOT NULL,
+            cited_id TEXT NOT NULL,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (citing_id, cited_id),
+            FOREIGN KEY (citing_id) REFERENCES citation_papers(scholar_id) ON DELETE CASCADE,
+            FOREIGN KEY (cited_id) REFERENCES citation_papers(scholar_id) ON DELETE CASCADE
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_citation_edges_citing ON citation_edges(citing_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_citation_edges_cited ON citation_edges(cited_id)")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS tags (

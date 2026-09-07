@@ -8,12 +8,17 @@ export interface Paper {
   venue_evidence?: string;
   venue_checked_at?: string;
   venue_source?: "automatic" | "manual";
+  citation_count?: number;
+  reference_count?: number;
+  citation_synced_at?: string;
+  semantic_scholar_id?: string;
   categories: string;
   source: "local" | "arxiv";
   arxiv_url?: string;
   pdf_path?: string;
   md_path?: string;
   note_edited_at?: string;
+  created_at?: string;
   tldr?: string;
   core_contribution?: string;
   primary_domain?: string;
@@ -75,6 +80,13 @@ export interface GraphNode {
   latest_paper_date?: string;
   venue?: string;
   venue_year?: number;
+  citation_count?: number;
+  reference_count?: number;
+  citation_synced_at?: string;
+  scholar_id?: string;
+  is_seed?: boolean;
+  external?: boolean;
+  similarity_score?: number;
 }
 
 export interface GraphPaperReference {
@@ -89,11 +101,14 @@ export interface GraphEdge {
   source: string;
   target: string;
   title?: string;
-  relation_types?: Array<"author" | "institution" | "paper" | "produced" | "collaboration">;
+  relation_types?: Array<"author" | "institution" | "paper" | "produced" | "collaboration" | "citation" | "similarity">;
   papers?: GraphPaperReference[];
   shared_authors?: string[];
   shared_institutions?: string[];
   weight?: number;
+  directed?: boolean;
+  similarity?: number;
+  shared_references?: number;
 }
 
 export interface GraphData {
