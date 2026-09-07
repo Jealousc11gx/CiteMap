@@ -1,5 +1,6 @@
 name: Deploy Radar Worker
 
+# Worker、D1 migration 统一由 GitHub Actions 发布。
 on:
   workflow_dispatch:
   push:
