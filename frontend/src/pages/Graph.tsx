@@ -54,15 +54,15 @@ type GraphView = "team" | "paper";
 type PaperRelationMode = "metadata" | "citation" | "similarity";
 
 const NODE_COLORS = {
-  team: "#2563eb",
-  paper: "#64748b",
-  seed: "#2563eb",
-  reference: "#64748b",
-  citing: "#0284c7",
-  default: "#94a3b8",
+  team: "#315fba",
+  paper: "#55779f",
+  seed: "#315fba",
+  reference: "#66788f",
+  citing: "#3f7899",
+  default: "#657b96",
 };
 
-const YEAR_COLORS = ["#4338ca", "#2563eb", "#0891b2", "#0f766e", "#d97706"];
+const YEAR_COLORS = ["#9aaabd", "#829bb8", "#698bb5", "#5078ae", "#315fa8"];
 
 function paperYear(node: GraphNode): number | null {
   const value = Number(node.venue_year || node.published_date?.slice(0, 4));
@@ -563,10 +563,10 @@ export function Graph() {
               <PixiGraph
                 ref={graphRef}
                 data={visibleData!}
-                nodeColor={(node) => paperRelationMode === "similarity" && view === "paper"
-                  ? yearColor(node, similarityYearRange.min, similarityYearRange.max)
-                  : node.is_seed
-                    ? NODE_COLORS.seed
+                nodeColor={(node) => node.is_seed
+                  ? NODE_COLORS.seed
+                  : paperRelationMode === "similarity" && view === "paper"
+                    ? yearColor(node, similarityYearRange.min, similarityYearRange.max)
                   : node.citation_role === "reference"
                     ? NODE_COLORS.reference
                     : node.citation_role === "citing"
@@ -643,7 +643,7 @@ export function Graph() {
       }} className="w-full">
         <div className="flex min-h-11 items-center gap-2 border-y border-border/70 py-2">
           <TabsList className="h-8 shrink-0"><TabsTrigger className="h-7 px-3 text-xs" value="team"><Users className="mr-1.5 h-3.5 w-3.5" />团队</TabsTrigger><TabsTrigger className="h-7 px-3 text-xs" value="paper"><Library className="mr-1.5 h-3.5 w-3.5" />论文</TabsTrigger></TabsList>
-          {view === "paper" && <div className="flex h-8 shrink-0 items-center rounded-md bg-muted/70 p-0.5" aria-label="论文关系模式"><button type="button" title="按共同作者与机构连接收藏论文" className={`h-7 rounded px-2.5 text-xs transition-colors ${paperRelationMode === "metadata" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setPaperRelationMode("metadata")}><Users className="mr-1 inline h-3.5 w-3.5" />收藏关系</button><button type="button" title="查看直接参考文献与被引论文" className={`h-7 rounded px-2.5 text-xs transition-colors ${paperRelationMode === "citation" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setPaperRelationMode("citation")}><Quote className="mr-1 inline h-3.5 w-3.5" />引用脉络</button><button type="button" title="按共同参考文献计算论文相似度" className={`h-7 rounded px-2.5 text-xs transition-colors ${paperRelationMode === "similarity" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setPaperRelationMode("similarity")}><GitFork className="mr-1 inline h-3.5 w-3.5" />相似地图</button></div>}
+          {view === "paper" && <div className="flex h-8 shrink-0 items-center rounded-md bg-muted/70 p-0.5" aria-label="论文关系模式"><button type="button" title="按共同作者与机构连接收藏论文" className={`h-7 rounded px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${paperRelationMode === "metadata" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setPaperRelationMode("metadata")}><Users className="mr-1 inline h-3.5 w-3.5" />收藏关系</button><button type="button" title="查看直接参考文献与被引论文" className={`h-7 rounded px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${paperRelationMode === "citation" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setPaperRelationMode("citation")}><Quote className="mr-1 inline h-3.5 w-3.5" />引用脉络</button><button type="button" title="按共同参考文献计算论文相似度" className={`h-7 rounded px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${paperRelationMode === "similarity" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setPaperRelationMode("similarity")}><GitFork className="mr-1 inline h-3.5 w-3.5" />相似地图</button></div>}
           <div className="ml-auto flex min-w-0 items-center justify-end gap-2">
             {view === "team" && <Button variant="ghost" size="sm" className="h-8" title="批量更新项目论文的引用数与参考文献数" onClick={() => void syncProjectMetrics()} disabled={syncingMetrics}>{syncingMetrics ? <Loader2 className="animate-spin" /> : <Quote />}更新引用指标</Button>}
             {view === "paper" && paperRelationMode !== "metadata" && <select className="h-8 w-48 max-w-48 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={seedPaperId} onChange={(event) => { setSeedPaperId(event.target.value); setSelectedNode(null); setSelectedEdge(null); }} aria-label="选择种子论文">{(paperData?.nodes || []).map((node) => <option key={node.id} value={node.id}>{node.title || node.label}</option>)}</select>}
