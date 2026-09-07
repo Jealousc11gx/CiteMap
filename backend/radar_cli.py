@@ -1,0 +1,82 @@
+"""GitHub Actions 论文雷达入口。
+
+该入口不读取本机 SQLite。Action 只通过 Radar Store 获取项目 profile、写入候选、发邮件。
+"""
+
+from __future__ import annotations
+
+import os
+from datetime import date
+
+from paper_graph.radar import candidate_matches_config, fetch_arxiv_candidates
+from paper_graph.radar_embeddings import get_embedding_provider
+from paper_graph.radar_mail import send_radar_email
+from paper_graph.radar_llm import enrich_with_tldr
+from paper_graph.radar_ranking import rank_candidates
+from paper_graph.radar_sync import RadarRemoteClient
+
+
+def run_remote_radar() -> dict:
+    base_url = os.environ.get("RADAR_REMOTE_URL", "").strip()
+    token = os.environ.get("RADAR_REMOTE_TOKEN", "").strip()
+    if not base_url or not token:
+        raise RuntimeError("未配置 RADAR_REMOTE_URL / RADAR_REMOTE_TOKEN")
+    client = RadarRemoteClient(base_url, token)
+    projects_payload = client._request("GET", "/profiles")
+    sent = 0
+    projects = projects_payload.get("projects") or []
+    test_mode = os.getenv("RADAR_TEST_MODE", "false").strip().casefold() in {"1", "true", "yes", "on"}
+    debug = os.getenv("RADAR_DEBUG", "false").strip().casefold() in {"1", "true", "yes", "on"}
+    if debug:
+        print(f"[radar] projects={len(projects)} test_mode={test_mode}")
+    for project in projects:
+        if not project.get("enabled", False):
+            continue
+        project_id = project["project_id"]
+        fetch_limit = int(project.get("fetch_limit", 100))
+        top_k = int(project.get("top_k", 10))
+        if test_mode:
+            fetch_limit = min(fetch_limit, int(os.getenv("RADAR_TEST_MAX_RESULTS", "5")))
+            top_k = min(top_k, int(os.getenv("RADAR_TEST_TOP_K", "3")))
+        candidates = fetch_arxiv_candidates(
+            project.get("categories") or [],
+            max_results=fetch_limit,
+            include_cross_list=bool(project.get("include_cross_list", True)),
+        )
+        candidates = [candidate for candidate in candidates if candidate_matches_config(candidate, project)]
+        if debug:
+            print(f"[radar] project={project_id} candidates_after_filter={len(candidates)}")
+        references = project.get("reference_papers") or []
+        if not references:
+            continue
+        ranked = rank_candidates(
+            candidates,
+            references,
+            embedding_provider=get_embedding_provider(),
+            anchor_ids=set(project.get("anchor_paper_ids") or []),
+            anchor_bonus=float(project.get("anchor_bonus", 0.1)),
+            top_k=top_k,
+            min_score=float(project.get("min_score", 0.0)),
+        )
+        if debug:
+            print(f"[radar] project={project_id} ranked={len(ranked)}")
+        if not ranked:
+            if project.get("send_empty"):
+                send_radar_email([], subject=f"CiteMap 论文雷达 {date.today().isoformat()}")
+            continue
+        payload = []
+        for item in ranked:
+            item["project_id"] = project_id
+            payload.append(item)
+        enrich_with_tldr(payload)
+        created = client.create_items(payload)
+        new_items = created.get("new_items") or []
+        if new_items:
+            send_radar_email(new_items, subject=f"CiteMap 论文雷达 {date.today().isoformat()}")
+            client._request("POST", "/items/emailed", {"items": [{"project_id": project_id, "arxiv_id": item["arxiv_id"]} for item in new_items]})
+            sent += len(new_items)
+    return {"projects": len(projects), "sent": sent, "test_mode": test_mode}
+
+
+if __name__ == "__main__":
+    print(run_remote_radar())

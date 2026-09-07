@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
+    <title>智能聊天</title>
+    <base href="/kimi-web/" />
+    <script type="module" crossorigin src="./assets/index-BOm7dYJo.js"></script>
+    <style>
+      /* 隐藏 Kimi 侧边栏品牌标识 */
+      img[src*="logo"] { display: none !important; }
+      img[alt*="Kimi"] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      (function() {
+        function removeBranding() {
+          // 隐藏所有 logo 图片
+          document.querySelectorAll('img').forEach(function(img) {
+            if (img.src && (img.src.includes('logo') || img.alt && img.alt.toLowerCase().includes('kimi'))) {
+              img.style.display = 'none';
+              if (img.parentElement) img.parentElement.style.display = 'none';
+            }
+          });
+          // 隐藏包含 Kimi 文本的元素及其父容器
+          document.querySelectorAll('*').forEach(function(el) {
+            var text = (el.textContent || '').trim();
+            if (text === 'Kimi' || text === 'Kimi Code' || text.startsWith('Kimi Code v')) {
+              el.style.display = 'none';
+              var parent = el.parentElement;
+              if (parent && parent.children.length <= 3) {
+                parent.style.display = 'none';
+              }
+            }
+          });
+        }
+        // 延迟执行，等待 React 渲染完成
+        setTimeout(removeBranding, 500);
+        setTimeout(removeBranding, 1500);
+        setTimeout(removeBranding, 3000);
+        var observer = new MutationObserver(removeBranding);
+        observer.observe(document.body, { childList: true, subtree: true });
+      })();
+    </script>
+  </body>
+</html>

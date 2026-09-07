@@ -1,0 +1,55 @@
+name: CiteMap Radar
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 22 * * *"
+
+jobs:
+  radar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/huggingface
+            ~/.cache/torch
+            ~/.cache/sentence_transformers
+          key: ${{ runner.os }}-radar-embedding-${{ vars.RADAR_EMBEDDING_MODEL || 'jinaai/jina-embeddings-v5-text-nano-retrieval' }}
+          restore-keys: |
+            ${{ runner.os }}-radar-embedding-
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+      - name: Run radar
+        env:
+          RADAR_REMOTE_URL: ${{ secrets.RADAR_REMOTE_URL }}
+          RADAR_REMOTE_TOKEN: ${{ secrets.RADAR_REMOTE_TOKEN }}
+          RADAR_EMBEDDING_PROVIDER: ${{ vars.RADAR_EMBEDDING_PROVIDER || 'local' }}
+          RADAR_EMBEDDING_API_KEY: ${{ secrets.RADAR_EMBEDDING_API_KEY }}
+          RADAR_EMBEDDING_BASE_URL: ${{ vars.RADAR_EMBEDDING_BASE_URL }}
+          RADAR_EMBEDDING_MODEL: ${{ vars.RADAR_EMBEDDING_MODEL || 'jinaai/jina-embeddings-v5-text-nano-retrieval' }}
+          RADAR_EMBEDDING_TASK: ${{ vars.RADAR_EMBEDDING_TASK || 'retrieval' }}
+          RADAR_EMBEDDING_PROMPT_NAME: ${{ vars.RADAR_EMBEDDING_PROMPT_NAME || 'document' }}
+          RADAR_EMBEDDING_TRUST_REMOTE_CODE: ${{ vars.RADAR_EMBEDDING_TRUST_REMOTE_CODE || 'true' }}
+          RADAR_EMBEDDING_BATCH_SIZE: ${{ vars.RADAR_EMBEDDING_BATCH_SIZE || '64' }}
+          RADAR_DEBUG: ${{ vars.RADAR_DEBUG || 'false' }}
+          RADAR_LLM_ENABLED: ${{ vars.RADAR_LLM_ENABLED || 'true' }}
+          RADAR_LLM_REQUIRED: ${{ vars.RADAR_LLM_REQUIRED || 'false' }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
+          RADAR_SCHEDULE_UTC: ${{ vars.RADAR_SCHEDULE_UTC || '22:00' }}
+          RADAR_EMAIL_SENDER: ${{ secrets.RADAR_EMAIL_SENDER }}
+          RADAR_EMAIL_RECEIVER: ${{ secrets.RADAR_EMAIL_RECEIVER }}
+          RADAR_EMAIL_PASSWORD: ${{ secrets.RADAR_EMAIL_PASSWORD }}
+          RADAR_SMTP_HOST: ${{ vars.RADAR_SMTP_HOST }}
+          RADAR_SMTP_PORT: ${{ vars.RADAR_SMTP_PORT || '465' }}
+        run: python backend/radar_cli.py

@@ -1,0 +1,206 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 214 32% 97%;
+    --foreground: 222 33% 14%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221 72% 51%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 28% 94%;
+    --secondary-foreground: 222 33% 14%;
+    --muted: 214 28% 94%;
+    --muted-foreground: 215 18% 42%;
+    --accent: 219 55% 92%;
+    --accent-foreground: 221 62% 36%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 22% 86%;
+    --input: 214 22% 82%;
+    --ring: 221 72% 51%;
+    --radius: 0.5rem;
+
+    --sidebar-background: 214 29% 93%;
+    --sidebar-foreground: 222 33% 14%;
+    --sidebar-primary: 221 72% 51%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 219 65% 88%;
+    --sidebar-accent-foreground: 221 62% 32%;
+    --sidebar-border: 214 22% 83%;
+    --sidebar-ring: 221 72% 51%;
+  }
+
+  .dark {
+    --background: 222 47% 7%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 243 75% 65%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 243 75% 65%;
+
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 243 75% 65%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 217 33% 17%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217 33% 17%;
+    --sidebar-ring: 243 75% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    @apply antialiased;
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-background text-foreground;
+    min-width: 1024px;
+    min-height: 100vh;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  }
+
+  button,
+  input,
+  textarea {
+    letter-spacing: 0;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .workspace-heading {
+    @apply text-2xl font-semibold leading-tight tracking-tight;
+  }
+
+  .workspace-description {
+    @apply mt-1 text-sm text-muted-foreground;
+  }
+}
+
+@layer components {
+  .markdown-preview {
+    @apply break-words text-sm leading-7 text-foreground;
+  }
+
+  .markdown-preview > :first-child {
+    @apply mt-0;
+  }
+
+  .markdown-preview > :last-child {
+    @apply mb-0;
+  }
+
+  .markdown-preview h1 {
+    @apply mb-5 mt-8 border-b border-border pb-3 text-2xl font-semibold leading-tight;
+  }
+
+  .markdown-preview h2 {
+    @apply mb-3 mt-7 text-xl font-semibold leading-tight;
+  }
+
+  .markdown-preview h3 {
+    @apply mb-2 mt-6 text-base font-semibold leading-snug;
+  }
+
+  .markdown-preview h4,
+  .markdown-preview h5,
+  .markdown-preview h6 {
+    @apply mb-2 mt-5 text-sm font-semibold;
+  }
+
+  .markdown-preview p {
+    @apply my-4;
+  }
+
+  .markdown-preview a {
+    @apply font-medium text-primary underline decoration-primary/35 underline-offset-4 hover:decoration-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
+  }
+
+  .markdown-preview strong {
+    @apply font-semibold;
+  }
+
+  .markdown-preview ul {
+    @apply my-4 list-disc space-y-1 pl-6;
+  }
+
+  .markdown-preview ol {
+    @apply my-4 list-decimal space-y-1 pl-6;
+  }
+
+  .markdown-preview li > ul,
+  .markdown-preview li > ol {
+    @apply my-1;
+  }
+
+  .markdown-preview blockquote {
+    @apply my-5 border-l border-primary bg-muted/70 px-4 py-2 text-muted-foreground;
+  }
+
+  .markdown-preview blockquote p {
+    @apply my-1;
+  }
+
+  .markdown-preview code {
+    @apply rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em] text-foreground;
+  }
+
+  .markdown-preview pre {
+    @apply my-5 overflow-x-auto rounded-md bg-foreground p-4 text-background;
+  }
+
+  .markdown-preview pre code {
+    @apply bg-transparent p-0 text-xs leading-6 text-inherit;
+  }
+
+  .markdown-preview table {
+    @apply my-5 w-full border-collapse text-left text-sm;
+  }
+
+  .markdown-preview th {
+    @apply border border-border bg-muted px-3 py-2 font-semibold;
+  }
+
+  .markdown-preview td {
+    @apply border border-border px-3 py-2 align-top;
+  }
+
+  .markdown-preview hr {
+    @apply my-8 border-border;
+  }
+
+  .markdown-preview img {
+    @apply my-5 h-auto max-w-full rounded-md;
+  }
+
+  .markdown-preview input[type="checkbox"] {
+    @apply mr-2 align-middle accent-primary;
+  }
+}

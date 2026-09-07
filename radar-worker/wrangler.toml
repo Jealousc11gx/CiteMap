@@ -1,0 +1,12 @@
+name = "citemap-radar"
+main = "src/index.js"
+compatibility_date = "2026-09-06"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "citemap-radar"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations-managed"
+
+[vars]
+ALLOWED_ORIGIN = "*"

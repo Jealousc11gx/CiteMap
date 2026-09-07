@@ -1,0 +1,14 @@
+version: 1
+agent:
+  extend: default
+  tools:
+    # CiteMap custom tools
+    - "paper_graph.kimi_tools:SearchArxiv"
+    - "paper_graph.kimi_tools:IngestArxivPaper"
+    - "paper_graph.kimi_tools:ListLocalPapers"
+    - "paper_graph.kimi_tools:SearchLocalPapers"
+    - "paper_graph.kimi_tools:GetPaperDetails"
+    - "paper_graph.kimi_tools:AnnotatePaperTool"
+    - "paper_graph.kimi_tools:DownloadPaperPdf"
+    - "paper_graph.kimi_tools:GetPaperNotes"
+    - "paper_graph.kimi_tools:GetGraphSummary"

@@ -1,0 +1,66 @@
+name: Deploy Radar Worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "radar-worker/**"
+      - ".github/workflows/deploy-radar-worker.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: radar-worker-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: radar-production
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate Cloudflare secrets
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+        run: |
+          test -n "$CF_API_TOKEN" || { echo "缺少 GitHub Secret: CLOUDFLARE_API_TOKEN"; exit 1; }
+          test -n "$CF_ACCOUNT_ID" || { echo "缺少 GitHub Secret: CLOUDFLARE_ACCOUNT_ID"; exit 1; }
+          test -n "$CF_D1_DATABASE_ID" || { echo "缺少 GitHub Secret: CLOUDFLARE_D1_DATABASE_ID"; exit 1; }
+
+      - name: Build CI Wrangler config
+        env:
+          CF_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+        run: |
+          node -e 'const fs=require("fs"); const path="radar-worker/wrangler.toml"; const output=fs.readFileSync(path,"utf8").replace("REPLACE_WITH_D1_DATABASE_ID",process.env.CF_D1_DATABASE_ID); fs.writeFileSync("radar-worker/wrangler.ci.toml",output)'
+
+      - name: Apply D1 migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: radar-worker
+          command: d1 migrations apply citemap-radar --remote --config wrangler.ci.toml
+
+      - name: Upgrade legacy D1 schema
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        working-directory: radar-worker
+        run: |
+          columns=$(npx --yes wrangler@4 d1 execute citemap-radar --remote --config wrangler.ci.toml --command "PRAGMA table_info(items)" --json)
+          if ! echo "$columns" | grep -q 'ai_summary'; then
+            npx --yes wrangler@4 d1 execute citemap-radar --remote --config wrangler.ci.toml --file migrations/0003_add_ai_fields.sql
+          fi
+
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: radar-worker
+          command: deploy --config wrangler.ci.toml
