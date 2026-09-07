@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Application, Container, Graphics, Text, FederatedPointerEvent } from "pixi.js";
 import {
   forceCenter,
@@ -27,12 +27,14 @@ interface PixiEdgeView {
   id: string;
   sourceId: string;
   targetId: string;
+  edge: GraphEdge;
   line: Graphics;
 }
 
 interface ForceNode extends SimulationNodeDatum {
   id: string;
   size: number;
+  linked: boolean;
 }
 
 interface ForceLink extends SimulationLinkDatum<ForceNode> {
@@ -50,7 +52,19 @@ interface PixiGraphProps {
   data: GraphData;
   nodeColor: (node: GraphNode) => string;
   onNodeClick?: (node: GraphNode) => void;
+  onEdgeClick?: (edge: GraphEdge) => void;
+  matchedNodeIds?: Set<string>;
+  focusedNodeIds?: Set<string>;
+  selectedNodeId?: string | null;
+  selectedEdgeKey?: string | null;
   className?: string;
+}
+
+export interface PixiGraphHandle {
+  fitToView: () => void;
+  resetLayout: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
 }
 
 function colorToNumber(color: string): number {
@@ -62,8 +76,23 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function getNodeRadius(node: GraphNode): number {
-  const base = node.group === "team" ? 14 : 10;
-  return base;
+  const base = node.group === "team" ? 32 : 15;
+  const weightedDegree = Math.max(0, node.weighted_degree || node.degree || 0);
+  return base + Math.min(node.group === "team" ? 10 : 5, Math.log2(weightedDegree + 1) * 2.2);
+}
+
+export function getEdgeKey(edge: Pick<GraphEdge, "source" | "target">): string {
+  return [String(edge.source), String(edge.target)].sort().join("::");
+}
+
+function getRelationColor(edge: GraphEdge, isDark: boolean): number {
+  const types = edge.relation_types || [];
+  if (types.includes("collaboration")) return isDark ? 0x60a5fa : 0x2563eb;
+  if (types.includes("produced")) return isDark ? 0x64748b : 0x94a3b8;
+  if (types.includes("author") && types.includes("institution")) return isDark ? 0x818cf8 : 0x4f46e5;
+  if (types.includes("institution")) return isDark ? 0x2dd4bf : 0x0f766e;
+  if (types.includes("paper")) return isDark ? 0x818cf8 : 0x365edc;
+  return isDark ? 0x64748b : 0x94a3b8;
 }
 
 function getInitialPosition(index: number, total: number, width: number, height: number) {
@@ -78,9 +107,13 @@ function createForceLayout(
   width: number,
   height: number,
 ): ForceLayoutState {
+  const linkedNodeIds = new Set(
+    edges.flatMap((edge) => [String(edge.source), String(edge.target)]),
+  );
   const forceNodes: ForceNode[] = nodes.map((node, index) => ({
     id: node.id,
     size: getNodeRadius(node),
+    linked: linkedNodeIds.has(node.id),
     ...getInitialPosition(index, nodes.length, width, height),
   }));
 
@@ -95,8 +128,8 @@ function createForceLayout(
 
   const nodeCount = forceNodes.length;
   const linkDistance = nodeCount <= 18 ? 120 : nodeCount <= 48 ? 90 : 70;
-  const chargeRange = Math.max(width, height) * (nodeCount <= 30 ? 1.3 : 1.0);
-  const chargeStrength = nodeCount <= 18 ? -400 : nodeCount <= 60 ? -300 : -220;
+  const chargeRange = Math.min(700, Math.max(width, height) * 0.8);
+  const linkedCharge = nodeCount <= 24 ? -190 : nodeCount <= 80 ? -140 : -100;
 
   const simulation = forceSimulation<ForceNode>(forceNodes)
     .force(
@@ -112,16 +145,16 @@ function createForceLayout(
         .distanceMin(1)
         .distanceMax(chargeRange)
         .theta(0.5)
-        .strength(chargeStrength),
+        .strength((node) => node.linked ? linkedCharge : linkedCharge * 0.28),
     )
     .force(
       "collision",
       forceCollide<ForceNode>()
-        .radius((d) => Math.max(28, d.size * 0.9))
+        .radius((d) => Math.max(30, d.size + 12))
         .iterations(2),
     )
-    .force("x", forceX<ForceNode>(0).strength(0.03))
-    .force("y", forceY<ForceNode>(0).strength(0.03))
+    .force("x", forceX<ForceNode>(0).strength(0.075))
+    .force("y", forceY<ForceNode>(0).strength(0.075))
     .force("center", forceCenter<ForceNode>(0, 0))
     .velocityDecay(0.5)
     .alpha(1)
@@ -152,7 +185,17 @@ function useDarkMode() {
   return isDark;
 }
 
-export function PixiGraph({ data, nodeColor, onNodeClick, className }: PixiGraphProps) {
+export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function PixiGraph({
+  data,
+  nodeColor,
+  onNodeClick,
+  onEdgeClick,
+  matchedNodeIds,
+  focusedNodeIds,
+  selectedNodeId,
+  selectedEdgeKey,
+  className,
+}, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<Application | null>(null);
   const sceneRef = useRef<Container | null>(null);
@@ -174,7 +217,6 @@ export function PixiGraph({ data, nodeColor, onNodeClick, className }: PixiGraph
 
   const textColor = isDark ? 0xe2e8f0 : 0x0f172a;
   const strokeColor = isDark ? 0x334155 : 0xcbd5e1;
-  const edgeColor = isDark ? 0x475569 : 0x94a3b8;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -257,7 +299,8 @@ export function PixiGraph({ data, nodeColor, onNodeClick, className }: PixiGraph
           const local = event.getLocalPosition(scene);
           node.fx = local.x;
           node.fy = local.y;
-          forceLayoutRef.current.simulation.alphaTarget(0.2).restart();
+          forceLayoutRef.current.simulation.alphaTarget(0.2).alpha(0.35);
+          startTicker();
           return;
         }
 
@@ -276,6 +319,7 @@ export function PixiGraph({ data, nodeColor, onNodeClick, className }: PixiGraph
             node.fy = undefined;
           }
           forceLayoutRef.current.simulation.alphaTarget(0);
+          startTicker();
         }
         draggingNodeIdRef.current = null;
         nodePointerStartRef.current = null;
@@ -292,11 +336,20 @@ export function PixiGraph({ data, nodeColor, onNodeClick, className }: PixiGraph
       app.stage.on("globalpointerupoutside", endPointerAction);
       window.addEventListener("pointerup", endPointerAction);
       window.addEventListener("blur", endPointerAction);
+      const canvas = app.canvas;
 
       return () => {
-        app.canvas.removeEventListener("wheel", handleWheel);
+        canvas.removeEventListener("wheel", handleWheel);
         window.removeEventListener("pointerup", endPointerAction);
         window.removeEventListener("blur", endPointerAction);
+        app.destroy({ removeView: true }, { children: true });
+        if (appRef.current === app) {
+          appRef.current = null;
+          sceneRef.current = null;
+          edgeLayerRef.current = null;
+          nodeLayerRef.current = null;
+          labelLayerRef.current = null;
+        }
       };
     }
 
@@ -305,8 +358,6 @@ export function PixiGraph({ data, nodeColor, onNodeClick, className }: PixiGraph
     return () => {
       cancelled = true;
       cleanupPromise.then((cleanup) => cleanup?.());
-      appRef.current?.destroy({ removeView: true }, { children: true });
-      appRef.current = null;
     };
   }, []);
 
@@ -327,12 +378,30 @@ export function PixiGraph({ data, nodeColor, onNodeClick, className }: PixiGraph
 
       sizeRef.current = { width, height };
       appRef.current?.renderer.resize(width, height);
-      forceLayoutRef.current?.simulation.restart();
+      fitToView();
     });
 
     observer.observe(container);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    renderGraph();
+  }, [matchedNodeIds, focusedNodeIds, selectedNodeId, selectedEdgeKey]);
+
+  useImperativeHandle(ref, () => ({
+    fitToView,
+    resetLayout: rebuildGraph,
+    zoomIn: () => zoomAtCenter(1.25),
+    zoomOut: () => zoomAtCenter(0.8),
+  }));
+
+  function zoomAtCenter(factor: number) {
+    zoomAround(factor, {
+      x: sizeRef.current.width / 2,
+      y: sizeRef.current.height / 2,
+    });
+  }
 
   function zoomAround(factor: number, point: { x: number; y: number }) {
     const scene = sceneRef.current;
@@ -433,15 +502,26 @@ export function PixiGraph({ data, nodeColor, onNodeClick, className }: PixiGraph
     );
     forceLayoutRef.current = layout;
 
+    // d3-force 支持 stop 后手动 tick，静态图无需永久运行渲染循环。
+    layout.simulation.tick(safeNodes.length > 400 ? 80 : 160);
+
     for (const edge of safeEdges) {
       if (!layout.nodeById.has(edge.source) || !layout.nodeById.has(edge.target)) continue;
       const line = new Graphics();
       line.zIndex = 1;
+      line.eventMode = "dynamic";
+      line.cursor = "pointer";
+      line.on("pointerdown", (event: FederatedPointerEvent) => {
+        event.stopPropagation();
+        isPanningRef.current = false;
+      });
+      line.on("pointerup", () => onEdgeClick?.(edge));
       edgeLayer.addChild(line);
       edgeViewsRef.current.set(edge.id, {
         id: edge.id,
         sourceId: edge.source,
         targetId: edge.target,
+        edge,
         line,
       });
     }
@@ -455,37 +535,53 @@ export function PixiGraph({ data, nodeColor, onNodeClick, className }: PixiGraph
       labelLayer.addChild(nodeView.label);
     }
 
+    renderGraph();
+    fitToView();
+  }
+
+  function startTicker() {
+    const app = appRef.current;
+    const layout = forceLayoutRef.current;
+    if (!app || !layout || tickerHandlerRef.current) return;
+
     tickerHandlerRef.current = () => {
       layout.simulation.tick();
       renderGraph();
-      const simulation = layout.simulation;
-      if (simulation.alpha() <= simulation.alphaMin()) {
-        simulation.alpha(0.03);
+      if (layout.simulation.alpha() <= layout.simulation.alphaMin()) {
+        if (tickerHandlerRef.current) app.ticker.remove(tickerHandlerRef.current);
+        tickerHandlerRef.current = null;
       }
     };
     app.ticker.add(tickerHandlerRef.current);
-    renderGraph();
   }
 
   function createNodeView(node: GraphNode, forceNode: ForceNode): PixiNodeView {
     const radius = getNodeRadius(node);
     const root = new Container();
     const body = new Graphics();
-    const color = colorToNumber(nodeColor(node));
+    const isTeam = node.group === "team";
+    const color = isTeam
+      ? colorToNumber(nodeColor(node))
+      : isDark ? 0x1e293b : 0xffffff;
 
-    body.circle(0, 0, radius).fill({ color, alpha: 0.92 });
-    body.circle(0, 0, radius + 4).stroke({ color: strokeColor, width: 1.5, alpha: 0.6 });
+    body.circle(0, 0, radius).fill({ color, alpha: isTeam ? 0.96 : 1 });
+    body.circle(0, 0, radius).stroke({ color: isTeam ? color : strokeColor, width: isTeam ? 2 : 1.5, alpha: 0.9 });
+    if (isTeam) body.circle(0, 0, radius + 5).stroke({ color, width: 1.5, alpha: 0.2 });
 
-    const displayLabel = truncateLabel(node.label || node.id, 14);
+    const displayLabel = truncateLabel(node.label || node.id, isTeam ? 22 : 18);
     const label = new Text({
       text: displayLabel,
-      anchor: { x: 0.5, y: 0 },
+      anchor: { x: 0.5, y: isTeam ? 0.5 : 0 },
       style: {
         fontFamily: "Inter, system-ui, sans-serif",
-        fontSize: 11,
+        fontSize: isTeam ? 10.5 : 11,
         fontWeight: "600",
-        fill: textColor,
+        fill: isTeam ? 0xffffff : textColor,
         align: "center",
+        wordWrap: isTeam,
+        breakWords: isTeam,
+        wordWrapWidth: isTeam ? radius * 1.55 : 180,
+        lineHeight: isTeam ? 14 : 15,
       },
     });
     label.visible = true;
@@ -506,11 +602,13 @@ export function PixiGraph({ data, nodeColor, onNodeClick, className }: PixiGraph
       body.scale.set(1.15);
       label.scale.set(1.08);
       label.alpha = 1;
+      label.visible = true;
     });
     root.on("pointerout", () => {
       body.scale.set(1);
       label.scale.set(1);
       label.alpha = 0.92;
+      renderGraph();
     });
     root.on("pointerup", () => {
       if (draggingNodeIdRef.current === node.id && !didMoveDraggedNodeRef.current) {
@@ -538,15 +636,57 @@ export function PixiGraph({ data, nodeColor, onNodeClick, className }: PixiGraph
       const sy = typeof source.y === "number" ? source.y : 0;
       const tx = typeof target.x === "number" ? target.x : 0;
       const ty = typeof target.y === "number" ? target.y : 0;
+      const edgeKey = getEdgeKey(edgeView.edge);
+      const isSelected = selectedEdgeKey === edgeKey;
+      const isFocused = !focusedNodeIds || (
+        focusedNodeIds.has(edgeView.sourceId) && focusedNodeIds.has(edgeView.targetId)
+      );
+      const isMatched = !matchedNodeIds?.size || (
+        matchedNodeIds.has(edgeView.sourceId) || matchedNodeIds.has(edgeView.targetId)
+      );
+      const alpha = isSelected ? 0.95 : isFocused && isMatched ? 0.55 : 0.09;
+      const width = isSelected
+        ? 3
+        : Math.min(2.6, 1 + Math.log2((edgeView.edge.weight || 1) + 1) * 0.45);
+      const relationColor = getRelationColor(edgeView.edge, isDark);
       edgeView.line.clear();
-      edgeView.line.moveTo(sx, sy).lineTo(tx, ty).stroke({ width: 1.2, color: edgeColor, alpha: 0.5 });
+      edgeView.line.moveTo(sx, sy).lineTo(tx, ty).stroke({ width: 12, color: relationColor, alpha: 0.001 });
+      edgeView.line.moveTo(sx, sy).lineTo(tx, ty).stroke({ width, color: relationColor, alpha });
     }
 
-    for (const nodeView of nodeViewsRef.current.values()) {
+    const occupiedLabelRects: Array<{ left: number; top: number; right: number; bottom: number }> = [];
+    const orderedNodeViews = Array.from(nodeViewsRef.current.values()).sort(
+      (a, b) => (b.node.weighted_degree || b.node.degree || 0) - (a.node.weighted_degree || a.node.degree || 0),
+    );
+    for (const nodeView of orderedNodeViews) {
       const x = typeof nodeView.forceNode.x === "number" ? nodeView.forceNode.x : 0;
       const y = typeof nodeView.forceNode.y === "number" ? nodeView.forceNode.y : 0;
       nodeView.root.position.set(x, y);
-      nodeView.label.position.set(x, y + getNodeRadius(nodeView.node) + 10);
+      const isTeam = nodeView.node.group === "team";
+      nodeView.label.position.set(x, isTeam ? y : y + getNodeRadius(nodeView.node) + 10);
+      const matchesSearch = !matchedNodeIds?.size || matchedNodeIds.has(nodeView.node.id);
+      const isFocused = !focusedNodeIds || focusedNodeIds.has(nodeView.node.id);
+      nodeView.root.alpha = matchesSearch && isFocused ? 1 : matchesSearch || isFocused ? 0.34 : 0.12;
+      nodeView.label.alpha = matchesSearch && isFocused ? 0.95 : 0.2;
+      if (selectedNodeId === nodeView.node.id) {
+        nodeView.root.scale.set(1.18);
+        nodeView.label.alpha = 1;
+      } else {
+        nodeView.root.scale.set(1);
+      }
+
+      const isRequiredLabel = isTeam || selectedNodeId === nodeView.node.id || Boolean(matchedNodeIds?.has(nodeView.node.id));
+      const rect = {
+        left: x - nodeView.label.width / 2 - 3,
+        top: isTeam ? y - nodeView.label.height / 2 - 3 : y + getNodeRadius(nodeView.node) + 7,
+        right: x + nodeView.label.width / 2 + 3,
+        bottom: isTeam ? y + nodeView.label.height / 2 + 3 : y + getNodeRadius(nodeView.node) + nodeView.label.height + 13,
+      };
+      const overlaps = occupiedLabelRects.some((placed) => !(
+        rect.right < placed.left || rect.left > placed.right || rect.bottom < placed.top || rect.top > placed.bottom
+      ));
+      nodeView.label.visible = isRequiredLabel || !overlaps;
+      if (nodeView.label.visible) occupiedLabelRects.push(rect);
     }
   }
 
@@ -559,4 +699,4 @@ export function PixiGraph({ data, nodeColor, onNodeClick, className }: PixiGraph
       )}
     />
   );
-}
+});

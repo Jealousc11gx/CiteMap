@@ -5,7 +5,13 @@ from pathlib import Path
 import networkx as nx
 import pytest
 
-from paper_graph.graph import build_paper_graph, build_team_graph, export_html, visualize
+from paper_graph.graph import (
+    build_paper_graph,
+    build_team_ego_graph,
+    build_team_graph,
+    export_html,
+    visualize,
+)
 from paper_graph.database import get_connection, upsert_paper
 
 
@@ -98,6 +104,81 @@ def test_build_paper_graph_with_data(tmp_db):
     assert graph.number_of_nodes() == 3
     # p1-p2 share Author A, p2-p3 share Author B
     assert graph.number_of_edges() == 2
+    assert graph["p1"]["p2"]["relation_types"] == ["author"]
+    assert graph["p1"]["p2"]["shared_authors"] == ["Author A"]
+    assert graph.nodes["p2"]["degree"] == 2
+    assert graph.nodes["p2"]["weighted_degree"] == 2
+
+
+def test_build_paper_graph_combines_author_and_institution_evidence(tmp_db):
+    papers = [
+        {
+            "id": paper_id,
+            "title": title,
+            "abstract": "Abstract",
+            "published_date": "2025-01-01",
+            "updated_date": "2025-01-02",
+            "categories": "cs.LG",
+            "pdf_path": None,
+            "source": "arxiv",
+            "arxiv_url": f"https://arxiv.org/abs/{paper_id}",
+        }
+        for paper_id, title in (("p1", "First Paper"), ("p2", "Second Paper"))
+    ]
+    conn = get_connection(tmp_db)
+    for paper in papers:
+        upsert_paper(conn, paper)
+    conn.execute("INSERT INTO authors (name) VALUES (?)", ("Shared Author",))
+    author_id = conn.execute("SELECT id FROM authors WHERE name = ?", ("Shared Author",)).fetchone()[0]
+    conn.execute("INSERT INTO institutions (name) VALUES (?)", ("Shared Lab",))
+    institution_id = conn.execute("SELECT id FROM institutions WHERE name = ?", ("Shared Lab",)).fetchone()[0]
+    for paper_id in ("p1", "p2"):
+        conn.execute(
+            "INSERT INTO paper_authors (paper_id, author_id, author_order) VALUES (?, ?, 0)",
+            (paper_id, author_id),
+        )
+        conn.execute(
+            "INSERT INTO paper_institutions (paper_id, institution_id) VALUES (?, ?)",
+            (paper_id, institution_id),
+        )
+    conn.commit()
+    conn.close()
+
+    graph = build_paper_graph(tmp_db)
+
+    assert graph["p1"]["p2"]["weight"] == 2
+    assert graph["p1"]["p2"]["relation_types"] == ["author", "institution"]
+    assert graph["p1"]["p2"]["shared_authors"] == ["Shared Author"]
+    assert graph["p1"]["p2"]["shared_institutions"] == ["Shared Lab"]
+    assert graph.nodes["p1"]["authors"] == ["Shared Author"]
+    assert graph.nodes["p1"]["institutions"] == ["Shared Lab"]
+
+
+def test_build_paper_graph_does_not_merge_authors_with_same_name(tmp_db):
+    conn = get_connection(tmp_db)
+    for paper_id in ("p1", "p2"):
+        upsert_paper(conn, {
+            "id": paper_id,
+            "title": paper_id,
+            "abstract": "",
+            "published_date": "2025-01-01",
+            "updated_date": "2025-01-01",
+            "categories": "cs.AI",
+            "pdf_path": None,
+            "source": "arxiv",
+            "arxiv_url": "",
+        })
+    conn.execute("INSERT INTO authors (name, affiliation) VALUES (?, ?)", ("Alex Lee", "Lab A"))
+    conn.execute("INSERT INTO authors (name, affiliation) VALUES (?, ?)", ("Alex Lee", "Lab B"))
+    author_ids = [row[0] for row in conn.execute("SELECT id FROM authors WHERE name = ? ORDER BY id", ("Alex Lee",)).fetchall()]
+    conn.execute("INSERT INTO paper_authors (paper_id, author_id, author_order) VALUES (?, ?, 0)", ("p1", author_ids[0]))
+    conn.execute("INSERT INTO paper_authors (paper_id, author_id, author_order) VALUES (?, ?, 0)", ("p2", author_ids[1]))
+    conn.commit()
+    conn.close()
+
+    graph = build_paper_graph(tmp_db)
+
+    assert graph.number_of_edges() == 0
 
 
 def test_build_team_graph_with_data(tmp_db):
@@ -141,6 +222,53 @@ def test_build_team_graph_with_data(tmp_db):
     graph = build_team_graph(tmp_db)
     assert graph.number_of_nodes() == 2
     assert graph.number_of_edges() == 1
+    assert graph[team1_id][team2_id]["weight"] == 1
+    assert graph[team1_id][team2_id]["papers"][0]["id"] == "p1"
+    assert graph.nodes[team1_id]["paper_count"] == 1
+
+
+def test_build_team_ego_graph_infers_communities_and_paper_nodes(tmp_db):
+    conn = get_connection(tmp_db)
+    for paper_id, title in (("p1", "Graph Paper"), ("p2", "Vision Paper")):
+        upsert_paper(conn, {
+            "id": paper_id,
+            "title": title,
+            "abstract": "",
+            "published_date": "2025-01-01",
+            "updated_date": "2025-01-01",
+            "categories": "cs.AI",
+            "pdf_path": None,
+            "source": "arxiv",
+            "arxiv_url": "",
+        })
+    for name in ("Alice", "Bob", "Carol", "Dan"):
+        conn.execute("INSERT INTO authors (name) VALUES (?)", (name,))
+    author_ids = {
+        row["name"]: row["id"]
+        for row in conn.execute("SELECT id, name FROM authors").fetchall()
+    }
+    for paper_id, names in (("p1", ("Alice", "Bob")), ("p2", ("Carol", "Dan"))):
+        for order, name in enumerate(names):
+            conn.execute(
+                "INSERT INTO paper_authors (paper_id, author_id, author_order) VALUES (?, ?, ?)",
+                (paper_id, author_ids[name], order),
+            )
+    conn.commit()
+    conn.close()
+
+    graph = build_team_ego_graph(tmp_db)
+
+    team_nodes = [data for _, data in graph.nodes(data=True) if data["group"] == "team"]
+    paper_nodes = [node_id for node_id, data in graph.nodes(data=True) if data["group"] == "paper"]
+    assert len(team_nodes) == 2
+    assert set(paper_nodes) == {"paper:p1", "paper:p2"}
+    assert all(team["team_type"] == "inferred" for team in team_nodes)
+    assert all(len(team["members"]) == 2 for team in team_nodes)
+    assert all(team["paper_count"] == 1 for team in team_nodes)
+    assert all(
+        edge["relation_types"] == ["produced"]
+        for _, _, edge in graph.edges(data=True)
+    )
 
 
 def test_export_html_creates_file(tmp_path):

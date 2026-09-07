@@ -186,6 +186,13 @@ export async function fetchGraphTeam(projectId?: string) {
   return res.json();
 }
 
+export async function fetchGraphTeamEgo(projectId?: string) {
+  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+  const res = await fetch(`${API_BASE}/graph/team-ego${query}`);
+  if (!res.ok) throw new Error("Failed to fetch team ego graph");
+  return res.json();
+}
+
 export async function fetchGraphPaper(projectId?: string) {
   const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
   const res = await fetch(`${API_BASE}/graph/paper${query}`);

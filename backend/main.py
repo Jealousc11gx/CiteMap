@@ -47,7 +47,7 @@ from paper_graph.radar_embeddings import get_embedding_provider
 from paper_graph.radar_sync import RadarRemoteClient, flush_pending_operations, sync_remote_changes
 from paper_graph.ingest import ingest_local_pdf, ingest_arxiv_id, search_arxiv, search_arxiv_only, _download_arxiv_pdf
 from paper_graph.annotate import annotate_paper, annotate_all, get_default_model, get_client, AnnotationError
-from paper_graph.graph import build_team_graph, build_paper_graph
+from paper_graph.graph import build_paper_graph, build_team_ego_graph, build_team_graph
 from paper_graph.notes import list_notes, get_note, save_note as notes_save, create_note_template, delete_note as notes_delete
 from paper_graph.chat_agent import run_agent, run_agent_stream
 import arxiv
@@ -740,6 +740,19 @@ def api_graph_team(project_id: Optional[str] = None):
     if project_id:
         _require_project(project_id)
     graph = build_team_graph(DB_PATH, project_id=project_id)
+    return {
+        "nodes": [{"id": n, **graph.nodes[n]} for n in graph.nodes()],
+        "edges": [{"source": u, "target": v, **graph.edges[u, v]} for u, v in graph.edges()],
+    }
+
+
+@app.get("/api/graph/team-ego")
+def api_graph_team_ego(project_id: Optional[str] = None):
+    """返回 Louvain 推断团队与关联论文组成的异构图。"""
+    init_db(DB_PATH)
+    if project_id:
+        _require_project(project_id)
+    graph = build_team_ego_graph(DB_PATH, project_id=project_id)
     return {
         "nodes": [{"id": n, **graph.nodes[n]} for n in graph.nodes()],
         "edges": [{"source": u, "target": v, **graph.edges[u, v]} for u, v in graph.edges()],

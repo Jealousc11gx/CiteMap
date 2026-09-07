@@ -119,6 +119,11 @@ class TestGraphEndpoints:
         assert data["nodes"] == []
         assert data["edges"] == []
 
+    def test_graph_team_ego_empty(self, client):
+        resp = client.get("/api/graph/team-ego")
+        assert resp.status_code == 200
+        assert resp.json() == {"nodes": [], "edges": []}
+
     def test_graph_paper_empty(self, client):
         resp = client.get("/api/graph/paper")
         assert resp.status_code == 200

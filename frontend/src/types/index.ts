@@ -49,12 +49,41 @@ export interface GraphNode {
   label?: string;
   title?: string;
   group?: string;
+  degree?: number;
+  weighted_degree?: number;
+  published_date?: string;
+  core_contribution?: string;
+  categories?: string;
+  arxiv_url?: string;
+  source?: string;
+  institution?: string;
+  authors?: string[];
+  institutions?: string[];
+  members?: string[];
+  papers?: GraphPaperReference[];
+  paper_count?: number;
+  paper_id?: string;
+  team_type?: "confirmed" | "inferred";
+  confidence?: "low" | "medium" | "high";
+  description?: string;
+  representative_author?: string;
+  latest_paper_date?: string;
+}
+
+export interface GraphPaperReference {
+  id: string;
+  title: string;
+  date?: string;
 }
 
 export interface GraphEdge {
   source: string;
   target: string;
-  papers?: Array<{ id: string; title: string; date: string }>;
+  title?: string;
+  relation_types?: Array<"author" | "institution" | "paper" | "produced" | "collaboration">;
+  papers?: GraphPaperReference[];
+  shared_authors?: string[];
+  shared_institutions?: string[];
   weight?: number;
 }
 

@@ -12,6 +12,7 @@ import {
   batchAnnotate,
   fetchLLMModels,
   fetchGraphTeam,
+  fetchGraphTeamEgo,
   fetchGraphPaper,
   listNotes,
   getNote,
@@ -357,6 +358,25 @@ describe('API services', () => {
       mockFetch.mockResolvedValue({ ok: false });
 
       await expect(fetchGraphTeam()).rejects.toThrow('Failed to fetch team graph');
+    });
+  });
+
+  describe('fetchGraphTeamEgo', () => {
+    it('should fetch the inferred team ego graph for a project', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ nodes: [], edges: [] }),
+      });
+
+      const result = await fetchGraphTeamEgo('project 1');
+      expect(mockFetch).toHaveBeenCalledWith('/api/graph/team-ego?project_id=project%201');
+      expect(result).toEqual({ nodes: [], edges: [] });
+    });
+
+    it('should throw on error', async () => {
+      mockFetch.mockResolvedValue({ ok: false });
+
+      await expect(fetchGraphTeamEgo()).rejects.toThrow('Failed to fetch team ego graph');
     });
   });
 
