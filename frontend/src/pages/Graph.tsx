@@ -8,10 +8,13 @@ import {
   useState,
 } from "react";
 import { useNavigate } from "react-router-dom";
+import * as PopoverPrimitive from "@radix-ui/react-popover";
 import {
   ArrowLeft,
   Building2,
   CalendarDays,
+  Check,
+  ChevronsUpDown,
   ExternalLink,
   FileText,
   Focus,
@@ -122,6 +125,96 @@ function searchableText(node: GraphNode): string {
 
 function categoriesOf(node: GraphNode): string[] {
   return (node.categories || "").split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
+}
+
+function PaperSeedPicker({
+  nodes,
+  value,
+  open,
+  onOpenChange,
+  onChange,
+}: {
+  nodes: GraphNode[];
+  value: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onChange: (paperId: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const selectedPaper = nodes.find((node) => node.id === value);
+  const orderedPapers = useMemo(() => [...nodes].sort((left, right) => (
+    (right.citation_count || 0) - (left.citation_count || 0)
+    || (paperYear(right) || 0) - (paperYear(left) || 0)
+    || (right.title || right.label || "").localeCompare(left.title || left.label || "")
+  )), [nodes]);
+  const filteredPapers = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    if (!normalizedQuery) return orderedPapers;
+    return orderedPapers.filter((node) => searchableText(node).includes(normalizedQuery));
+  }, [orderedPapers, query]);
+
+  return (
+    <PopoverPrimitive.Root open={open} onOpenChange={(nextOpen) => {
+      onOpenChange(nextOpen);
+      if (!nextOpen) setQuery("");
+    }}>
+      <PopoverPrimitive.Trigger asChild>
+        <Button variant="outline" size="sm" className="h-8 w-56 min-w-0 justify-between px-2.5 font-normal" aria-label="选择种子论文">
+          <span className={selectedPaper ? "truncate" : "text-muted-foreground"}>
+            {selectedPaper?.title || selectedPaper?.label || "选择种子论文"}
+          </span>
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        </Button>
+      </PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          align="end"
+          sideOffset={6}
+          className="z-50 w-[420px] overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-md outline-none"
+        >
+          <div className="border-b border-border p-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-2 h-4 w-4 text-muted-foreground" />
+              <Input
+                autoFocus
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="搜索标题、作者或 venue"
+                className="h-8 border-0 bg-muted/70 pl-9 shadow-none focus-visible:ring-1"
+                aria-label="搜索种子论文"
+              />
+            </div>
+          </div>
+          <div className="max-h-80 overflow-y-auto p-1.5" role="listbox" aria-label="种子论文列表">
+            {filteredPapers.length ? filteredPapers.map((paper) => {
+              const isSelected = paper.id === value;
+              const year = paperYear(paper);
+              return (
+                <button
+                  key={paper.id}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  className="flex w-full items-start gap-3 rounded px-2.5 py-2.5 text-left outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
+                  onClick={() => onChange(paper.id)}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="line-clamp-2 text-sm font-medium leading-5">{paper.title || paper.label}</span>
+                    <span className="mt-1 block truncate text-xs text-muted-foreground">
+                      {[paper.venue, year, paper.citation_count != null ? `引用 ${paper.citation_count}` : null].filter(Boolean).join(" · ") || "暂无发表信息"}
+                    </span>
+                  </span>
+                  <Check className={`mt-1 h-4 w-4 shrink-0 text-primary ${isSelected ? "opacity-100" : "opacity-0"}`} />
+                </button>
+              );
+            }) : (
+              <p className="px-3 py-8 text-center text-sm text-muted-foreground">没有匹配的论文</p>
+            )}
+          </div>
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
+  );
 }
 
 function edgeKey(edge: Pick<GraphEdge, "source" | "target" | "directed">): string {
@@ -323,6 +416,7 @@ export function Graph() {
   const [similarityData, setSimilarityData] = useState<GraphData | null>(null);
   const [paperRelationMode, setPaperRelationMode] = useState<PaperRelationMode>("metadata");
   const [seedPaperId, setSeedPaperId] = useState("");
+  const [seedPickerOpen, setSeedPickerOpen] = useState(false);
   const [syncingCitations, setSyncingCitations] = useState(false);
   const [syncingMetrics, setSyncingMetrics] = useState(false);
   const [syncingPaperId, setSyncingPaperId] = useState<string | null>(null);
@@ -362,6 +456,9 @@ export function Graph() {
   useEffect(() => {
     setTeamData(null);
     setPaperData(null);
+    setCitationData(null);
+    setSimilarityData(null);
+    setSeedPaperId("");
     setSearchQuery("");
     setYearFilter("all");
     setCategoryFilter("all");
@@ -374,8 +471,29 @@ export function Graph() {
       setSeedPaperId("");
       return;
     }
-    if (!nodes.some((node) => node.id === seedPaperId)) setSeedPaperId(nodes[0].id);
-  }, [paperData, seedPaperId]);
+    setSeedPaperId((current) => {
+      if (nodes.some((node) => node.id === current)) return current;
+      const saved = activeProject ? window.localStorage.getItem(`citemap.graph.seed.${activeProject.id}`) : null;
+      return saved && nodes.some((node) => node.id === saved) ? saved : "";
+    });
+  }, [paperData, activeProject]);
+
+  const selectSeedPaper = (paperId: string) => {
+    setSeedPaperId(paperId);
+    setCitationData(null);
+    setSimilarityData(null);
+    setSelectedNode(null);
+    setSelectedEdge(null);
+    setSeedPickerOpen(false);
+    if (activeProject) window.localStorage.setItem(`citemap.graph.seed.${activeProject.id}`, paperId);
+  };
+
+  const selectPaperRelationMode = (mode: PaperRelationMode) => {
+    setPaperRelationMode(mode);
+    setSelectedNode(null);
+    setSelectedEdge(null);
+    if (mode !== "metadata" && !seedPaperId) setSeedPickerOpen(true);
+  };
 
   const loadPaperRelation = useCallback(async (mode: PaperRelationMode, paperId: string) => {
     if (mode === "metadata" || !paperId) return;
@@ -547,7 +665,11 @@ export function Graph() {
     if (loading || projectLoading) {
       return <Card><CardContent className="flex min-h-[440px] items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />正在构建图谱...</CardContent></Card>;
     }
-    if (!activeProject || !rawData) return null;
+    if (!activeProject) return null;
+    if (view === "paper" && paperRelationMode !== "metadata" && !seedPaperId) {
+      return <Card><CardContent className="flex min-h-[440px] flex-col items-center justify-center text-center"><Search className="h-8 w-8 text-muted-foreground" /><p className="mt-4 text-sm font-medium">选择一篇种子论文</p><p className="mt-1 text-xs text-muted-foreground">引用脉络和相似地图将围绕这篇论文生成。</p><Button size="sm" className="mt-4" onClick={() => setSeedPickerOpen(true)}>选择种子论文</Button></CardContent></Card>;
+    }
+    if (!rawData) return null;
     if (view === "paper" && paperRelationMode !== "metadata" && rawData.nodes.length === 0) {
       return <Card><CardContent className="flex min-h-[440px] flex-col items-center justify-center text-center"><Quote className="h-8 w-8 text-muted-foreground" /><p className="mt-4 text-sm font-medium">尚未同步这篇论文的引用数据</p><p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">同步后生成真实引用方向、引用数及基于共同参考文献的相似网络。</p><Button size="sm" className="mt-4" onClick={() => void syncCitations()} disabled={syncingCitations}>{syncingCitations ? <Loader2 className="animate-spin" /> : <RefreshCcw />}同步引用数据</Button></CardContent></Card>;
     }
@@ -643,10 +765,10 @@ export function Graph() {
       }} className="w-full">
         <div className="flex min-h-11 items-center gap-2 border-y border-border/70 py-2">
           <TabsList className="h-8 shrink-0"><TabsTrigger className="h-7 px-3 text-xs" value="team"><Users className="mr-1.5 h-3.5 w-3.5" />团队</TabsTrigger><TabsTrigger className="h-7 px-3 text-xs" value="paper"><Library className="mr-1.5 h-3.5 w-3.5" />论文</TabsTrigger></TabsList>
-          {view === "paper" && <div className="flex h-8 shrink-0 items-center rounded-md bg-muted/70 p-0.5" aria-label="论文关系模式"><button type="button" title="按共同作者与机构连接收藏论文" className={`h-7 rounded px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${paperRelationMode === "metadata" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setPaperRelationMode("metadata")}><Users className="mr-1 inline h-3.5 w-3.5" />收藏关系</button><button type="button" title="查看直接参考文献与被引论文" className={`h-7 rounded px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${paperRelationMode === "citation" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setPaperRelationMode("citation")}><Quote className="mr-1 inline h-3.5 w-3.5" />引用脉络</button><button type="button" title="按共同参考文献计算论文相似度" className={`h-7 rounded px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${paperRelationMode === "similarity" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`} onClick={() => setPaperRelationMode("similarity")}><GitFork className="mr-1 inline h-3.5 w-3.5" />相似地图</button></div>}
+          {view === "paper" && <div className="flex h-8 shrink-0 items-center rounded-md bg-muted/70 p-0.5" aria-label="论文关系模式"><button type="button" title="按共同作者与机构连接收藏论文" className={`h-7 rounded px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${paperRelationMode === "metadata" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`} onClick={() => selectPaperRelationMode("metadata")}><Users className="mr-1 inline h-3.5 w-3.5" />收藏关系</button><button type="button" title="查看直接参考文献与被引论文" className={`h-7 rounded px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${paperRelationMode === "citation" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`} onClick={() => selectPaperRelationMode("citation")}><Quote className="mr-1 inline h-3.5 w-3.5" />引用脉络</button><button type="button" title="按共同参考文献计算论文相似度" className={`h-7 rounded px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${paperRelationMode === "similarity" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`} onClick={() => selectPaperRelationMode("similarity")}><GitFork className="mr-1 inline h-3.5 w-3.5" />相似地图</button></div>}
           <div className="ml-auto flex min-w-0 items-center justify-end gap-2">
             {view === "team" && <Button variant="ghost" size="sm" className="h-8" title="批量更新项目论文的引用数与参考文献数" onClick={() => void syncProjectMetrics()} disabled={syncingMetrics}>{syncingMetrics ? <Loader2 className="animate-spin" /> : <Quote />}更新引用指标</Button>}
-            {view === "paper" && paperRelationMode !== "metadata" && <select className="h-8 w-48 max-w-48 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={seedPaperId} onChange={(event) => { setSeedPaperId(event.target.value); setSelectedNode(null); setSelectedEdge(null); }} aria-label="选择种子论文">{(paperData?.nodes || []).map((node) => <option key={node.id} value={node.id}>{node.title || node.label}</option>)}</select>}
+            {view === "paper" && paperRelationMode !== "metadata" && <PaperSeedPicker nodes={paperData?.nodes || []} value={seedPaperId} open={seedPickerOpen} onOpenChange={setSeedPickerOpen} onChange={selectSeedPaper} />}
             {view === "paper" && paperRelationMode !== "metadata" && <Button variant="ghost" size="sm" className="h-8" title="从 Semantic Scholar 更新引用数据" onClick={() => void syncCitations()} disabled={!seedPaperId || syncingCitations}>{syncingCitations ? <Loader2 className="animate-spin" /> : <RefreshCcw />}同步</Button>}
             {view === "paper" && paperRelationMode === "citation" && <select className="h-8 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={citationLimit} onChange={(event) => setCitationLimit(Number(event.target.value))} aria-label="引用节点数量"><option value={8}>每侧 8 篇</option><option value={12}>每侧 12 篇</option><option value={20}>每侧 20 篇</option><option value={30}>每侧 30 篇</option></select>}
             <div className="relative w-48"><Search className="absolute left-3 top-2 h-4 w-4 text-muted-foreground" /><Input placeholder="搜索图谱节点..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-8 pl-9 pr-14" aria-label="搜索图谱节点" />{searchQuery && <span className="absolute right-2 top-2 text-xs tabular-nums text-muted-foreground">{matchedNodeIds.size} 项</span>}</div>
