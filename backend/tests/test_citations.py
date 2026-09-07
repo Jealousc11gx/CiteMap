@@ -6,6 +6,7 @@ from paper_graph.citations import (
     CitationSyncError,
     build_citation_graph,
     build_similarity_graph,
+    sync_citation_metrics,
     sync_citations,
 )
 from paper_graph.database import get_connection, upsert_paper
@@ -85,6 +86,28 @@ def test_sync_rejects_paper_without_arxiv_identifier(tmp_db):
     with pytest.raises(CitationSyncError, match="没有可用于匹配的 arXiv ID") as exc_info:
         sync_citations("local_without_arxiv", tmp_db)
     assert exc_info.value.status_code == 422
+
+
+def test_sync_citation_metrics_updates_counts_without_full_graph(tmp_db, monkeypatch):
+    _insert_seed(tmp_db)
+    monkeypatch.setattr("paper_graph.citations._request_json", lambda *args, **kwargs: [{
+        "paperId": "S", "title": "Seed Paper", "year": 2024, "venue": "ICLR",
+        "citationCount": 81, "referenceCount": 36, "externalIds": {"ArXiv": "2401.00001"},
+    }])
+
+    result = sync_citation_metrics(tmp_db)
+
+    assert result == {"total": 1, "eligible": 1, "updated": 1, "unmatched": 0, "skipped": 0}
+    conn = get_connection(tmp_db)
+    row = conn.execute(
+        "SELECT citation_count, reference_count, citation_synced_at, venue, venue_year FROM papers WHERE id = ?",
+        ("arxiv_2401.00001",),
+    ).fetchone()
+    assert dict(row) == {
+        "citation_count": 81, "reference_count": 36, "citation_synced_at": None,
+        "venue": "ICLR", "venue_year": 2024,
+    }
+    conn.close()
 
 
 def test_unsynced_graphs_are_empty(tmp_db):

@@ -53,6 +53,7 @@ from paper_graph.citations import (
     CitationSyncError,
     build_citation_graph,
     build_similarity_graph,
+    sync_citation_metrics,
     sync_citations,
 )
 from paper_graph.notes import list_notes, get_note, save_note as notes_save, create_note_template, delete_note as notes_delete
@@ -833,6 +834,14 @@ def api_sync_citations(paper_id: str):
     """从 Semantic Scholar 同步引用数及一阶引用邻域。"""
     try:
         return sync_citations(paper_id, DB_PATH)
+    except CitationSyncError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@app.post("/api/papers/sync-citation-metrics")
+def api_sync_citation_metrics(project_id: Optional[str] = None):
+    try:
+        return sync_citation_metrics(DB_PATH, project_id)
     except CitationSyncError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 

@@ -222,6 +222,16 @@ export async function syncPaperCitations(paperId: string) {
   return res.json();
 }
 
+export async function syncCitationMetrics(projectId?: string) {
+  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+  const res = await fetch(`${API_BASE}/papers/sync-citation-metrics${query}`, { method: "POST" });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => null))?.detail;
+    throw new Error(detail || "Failed to sync citation metrics");
+  }
+  return res.json();
+}
+
 export async function fetchGraphCitation(paperId: string, limitPerDirection = 12) {
   const params = new URLSearchParams({
     paper_id: paperId,

@@ -42,6 +42,7 @@ interface ForceNode extends SimulationNodeDatum {
 
 interface ForceLink extends SimulationLinkDatum<ForceNode> {
   id: string;
+  similarity?: number;
 }
 
 interface ForceLayoutState {
@@ -80,12 +81,12 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function getNodeRadius(node: GraphNode): number {
-  const base = node.group === "team" ? 32 : node.is_seed ? 22 : 15;
+  const base = node.group === "team" ? 28 : node.is_seed ? 15 : 11;
   if (node.citation_count !== undefined && node.citation_count !== null) {
-    return base + Math.min(10, Math.log10(node.citation_count + 1) * 2.8);
+    return base + Math.min(node.group === "team" ? 14 : 18, Math.log10(node.citation_count + 10) * 4.2);
   }
   const weightedDegree = Math.max(0, node.weighted_degree || node.degree || 0);
-  return base + Math.min(node.group === "team" ? 10 : 5, Math.log2(weightedDegree + 1) * 2.2);
+  return base + Math.min(node.group === "team" ? 12 : 7, Math.log2(weightedDegree + 1) * 2.2);
 }
 
 export function getEdgeKey(edge: Pick<GraphEdge, "source" | "target" | "directed">): string {
@@ -121,6 +122,7 @@ function createForceLayout(
     edges.flatMap((edge) => [String(edge.source), String(edge.target)]),
   );
   const isCitationLayout = nodes.some((node) => Boolean(node.citation_role));
+  const isSimilarityLayout = edges.some((edge) => edge.relation_types?.includes("similarity"));
   const roleCounts = {
     reference: nodes.filter((node) => node.citation_role === "reference").length,
     citing: nodes.filter((node) => node.citation_role === "citing").length,
@@ -158,6 +160,7 @@ function createForceLayout(
       id: `edge-${index}`,
       source: String(edge.source),
       target: String(edge.target),
+      similarity: edge.similarity,
     }));
 
   const nodeCount = forceNodes.length;
@@ -170,8 +173,14 @@ function createForceLayout(
       "link",
       forceLink<ForceNode, ForceLink>(forceLinks)
         .id((d) => d.id)
-        .distance(linkDistance)
-        .strength(isCitationLayout ? 0.18 : 0.5),
+        .distance((link) => isSimilarityLayout
+          ? 58 + (1 - (link.similarity || 0)) * 150
+          : linkDistance)
+        .strength((link) => isCitationLayout
+          ? 0.18
+          : isSimilarityLayout
+            ? 0.16 + (link.similarity || 0) * 0.62
+            : 0.5),
     )
     .force(
       "charge",
@@ -179,7 +188,7 @@ function createForceLayout(
         .distanceMin(1)
         .distanceMax(chargeRange)
         .theta(0.5)
-        .strength((node) => isCitationLayout ? -70 : node.linked ? linkedCharge : linkedCharge * 0.28),
+        .strength((node) => isCitationLayout ? -70 : isSimilarityLayout ? -125 : node.linked ? linkedCharge : linkedCharge * 0.28),
     )
     .force(
       "collision",
@@ -187,8 +196,8 @@ function createForceLayout(
         .radius((d) => Math.max(30, d.size + 12))
         .iterations(2),
     )
-    .force("x", forceX<ForceNode>((node) => node.columnX).strength(isCitationLayout ? 0.42 : 0.075))
-    .force("y", forceY<ForceNode>((node) => isCitationLayout ? node.rowY : 0).strength(isCitationLayout ? 0.38 : 0.075))
+    .force("x", forceX<ForceNode>((node) => node.columnX).strength(isCitationLayout ? 0.42 : isSimilarityLayout ? 0.035 : 0.075))
+    .force("y", forceY<ForceNode>((node) => isCitationLayout ? node.rowY : 0).strength(isCitationLayout ? 0.38 : isSimilarityLayout ? 0.035 : 0.075))
     .force("center", forceCenter<ForceNode>(0, 0))
     .velocityDecay(0.5)
     .alpha(1)
@@ -484,7 +493,8 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
     const height = Math.max(1, maxY - minY);
     const availableWidth = Math.max(1, sizeRef.current.width - padding * 2);
     const availableHeight = Math.max(1, sizeRef.current.height - padding * 2);
-    const scale = Math.min(availableWidth / width, availableHeight / height, 1.4);
+    const isSimilarityGraph = data.edges.some((edge) => edge.relation_types?.includes("similarity"));
+    const scale = Math.min(availableWidth / width, availableHeight / height, isSimilarityGraph ? 1.65 : 1.4);
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
 
@@ -601,15 +611,16 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
     const isTeam = node.group === "team";
     const isSeed = Boolean(node.is_seed);
     const isCitationNode = Boolean(node.citation_role);
+    const isSimilarityNode = node.similarity_score !== undefined;
     const color = isTeam
       ? colorToNumber(nodeColor(node))
-      : isSeed || isCitationNode ? colorToNumber(nodeColor(node))
+      : isSeed || isCitationNode || isSimilarityNode ? colorToNumber(nodeColor(node))
       : isDark ? 0x1e293b : 0xffffff;
 
     halo.circle(0, 0, radius + 7).stroke({ color: isDark ? 0x93c5fd : 0x1d4ed8, width: 3, alpha: 0.95 });
     halo.visible = false;
-    body.circle(0, 0, radius).fill({ color, alpha: isTeam || isSeed ? 0.96 : isCitationNode ? 0.12 : 1 });
-    body.circle(0, 0, radius).stroke({ color: isTeam || isSeed || isCitationNode ? color : strokeColor, width: isTeam || isSeed ? 2 : 1.5, alpha: 0.9 });
+    body.circle(0, 0, radius).fill({ color, alpha: isTeam || isSeed ? 0.96 : isSimilarityNode ? 0.82 : isCitationNode ? 0.12 : 1 });
+    body.circle(0, 0, radius).stroke({ color: isTeam || isSeed || isCitationNode || isSimilarityNode ? color : strokeColor, width: isTeam || isSeed ? 2 : 1.5, alpha: 0.95 });
     if (isTeam) body.circle(0, 0, radius + 5).stroke({ color, width: 1.5, alpha: 0.2 });
     if (isSeed) body.circle(0, 0, radius + 6).stroke({ color, width: 2, alpha: 0.28 });
 
@@ -622,13 +633,13 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
       },
       style: {
         fontFamily: "Inter, system-ui, sans-serif",
-        fontSize: isTeam ? 10.5 : node.citation_role ? 11.5 : 11,
+        fontSize: isTeam ? 9.5 : node.citation_role ? 11.5 : 11,
         fontWeight: "600",
         fill: isTeam ? 0xffffff : textColor,
         align: "center",
         wordWrap: isTeam,
-        breakWords: isTeam,
-        wordWrapWidth: isTeam ? radius * 1.55 : 180,
+        breakWords: false,
+        wordWrapWidth: isTeam ? radius * 1.8 : 180,
         lineHeight: isTeam ? 14 : 15,
       },
     });
@@ -693,10 +704,16 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
       const isMatched = !matchedNodeIds?.size || (
         matchedNodeIds.has(edgeView.sourceId) || matchedNodeIds.has(edgeView.targetId)
       );
-      const alpha = isSelected ? 0.95 : isFocused && isMatched ? 0.55 : 0.09;
+      const similarity = edgeView.edge.similarity || 0;
+      const baseAlpha = edgeView.edge.relation_types?.includes("similarity")
+        ? 0.16 + similarity * 0.58
+        : 0.55;
+      const alpha = isSelected ? 0.95 : isFocused && isMatched ? baseAlpha : 0.07;
       const width = isSelected
         ? 3
-        : Math.min(2.6, 1 + Math.log2((edgeView.edge.weight || 1) + 1) * 0.45);
+        : edgeView.edge.relation_types?.includes("similarity")
+          ? 0.8 + similarity * 2.4
+          : Math.min(2.6, 1 + Math.log2((edgeView.edge.weight || 1) + 1) * 0.45);
       const relationColor = getRelationColor(edgeView.edge, isDark);
       edgeView.line.clear();
       edgeView.line.moveTo(sx, sy).lineTo(tx, ty).stroke({ width: 12, color: relationColor, alpha: 0.001 });
@@ -730,6 +747,14 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
         || (b.node.weighted_degree || b.node.degree || 0) - (a.node.weighted_degree || a.node.degree || 0),
     );
     const labelBudget = orderedNodeViews.length <= 18 ? orderedNodeViews.length : 12;
+    let optionalLabelCount = 0;
+    const hasTeamNodes = orderedNodeViews.some((view) => view.node.group === "team");
+    const nodeBodyRects = orderedNodeViews.map((view) => {
+      const x = typeof view.forceNode.x === "number" ? view.forceNode.x : 0;
+      const y = typeof view.forceNode.y === "number" ? view.forceNode.y : 0;
+      const radius = getNodeRadius(view.node) + 5;
+      return { id: view.node.id, left: x - radius, top: y - radius, right: x + radius, bottom: y + radius };
+    });
     const citationLabelIds = new Set<string>();
     if (orderedNodeViews.some((view) => Boolean(view.node.citation_role))) {
       for (const role of ["reference", "citing"] as const) {
@@ -739,16 +764,30 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
           .forEach((view) => citationLabelIds.add(view.node.id));
       }
     }
-    for (const [nodeIndex, nodeView] of orderedNodeViews.entries()) {
+    for (const nodeView of orderedNodeViews) {
       const x = typeof nodeView.forceNode.x === "number" ? nodeView.forceNode.x : 0;
       const y = typeof nodeView.forceNode.y === "number" ? nodeView.forceNode.y : 0;
       nodeView.root.position.set(x, y);
       const isTeam = nodeView.node.group === "team";
+      const isTeamPaper = hasTeamNodes && !isTeam;
       const nodeRadius = getNodeRadius(nodeView.node);
-      nodeView.label.position.set(
-        nodeView.node.citation_role === "reference" ? x - nodeRadius - 8 : nodeView.node.citation_role === "citing" ? x + nodeRadius + 8 : x,
-        isTeam || (nodeView.node.citation_role && nodeView.node.citation_role !== "seed") ? y : y + nodeRadius + 10,
-      );
+      if (nodeView.node.citation_role === "reference") {
+        nodeView.label.anchor.set(1, 0.5);
+        nodeView.label.position.set(x - nodeRadius - 8, y);
+      } else if (nodeView.node.citation_role === "citing") {
+        nodeView.label.anchor.set(0, 0.5);
+        nodeView.label.position.set(x + nodeRadius + 8, y);
+      } else if (isTeamPaper) {
+        const placeLeft = x < 0;
+        nodeView.label.anchor.set(placeLeft ? 1 : 0, 0.5);
+        nodeView.label.position.set(x + (placeLeft ? -nodeRadius - 8 : nodeRadius + 8), y);
+      } else if (isTeam) {
+        nodeView.label.anchor.set(0.5, 0.5);
+        nodeView.label.position.set(x, y);
+      } else {
+        nodeView.label.anchor.set(0.5, 0);
+        nodeView.label.position.set(x, y + nodeRadius + 10);
+      }
       const matchesSearch = !matchedNodeIds?.size || matchedNodeIds.has(nodeView.node.id);
       const isFocused = !focusedNodeIds || focusedNodeIds.has(nodeView.node.id);
       nodeView.root.alpha = matchesSearch && isFocused ? 1 : matchesSearch || isFocused ? 0.56 : 0.16;
@@ -761,15 +800,20 @@ export const PixiGraph = forwardRef<PixiGraphHandle, PixiGraphProps>(function Pi
 
       const isRequiredLabel = isTeam || Boolean(nodeView.node.is_seed) || citationLabelIds.has(nodeView.node.id) || selectedNodeId === nodeView.node.id || Boolean(matchedNodeIds?.has(nodeView.node.id));
       const rect = {
-        left: x - nodeView.label.width / 2 - 3,
-        top: isTeam || (nodeView.node.citation_role && nodeView.node.citation_role !== "seed") ? y - nodeView.label.height / 2 - 3 : y + nodeRadius + 7,
-        right: x + nodeView.label.width / 2 + 3,
-        bottom: isTeam || (nodeView.node.citation_role && nodeView.node.citation_role !== "seed") ? y + nodeView.label.height / 2 + 3 : y + nodeRadius + nodeView.label.height + 13,
+        left: nodeView.label.x - nodeView.label.width * nodeView.label.anchor.x - 3,
+        top: nodeView.label.y - nodeView.label.height * nodeView.label.anchor.y - 3,
+        right: nodeView.label.x + nodeView.label.width * (1 - nodeView.label.anchor.x) + 3,
+        bottom: nodeView.label.y + nodeView.label.height * (1 - nodeView.label.anchor.y) + 3,
       };
       const overlaps = occupiedLabelRects.some((placed) => !(
         rect.right < placed.left || rect.left > placed.right || rect.bottom < placed.top || rect.top > placed.bottom
       ));
-      nodeView.label.visible = isRequiredLabel || (!nodeView.node.citation_role && nodeIndex < labelBudget && !overlaps);
+      const overlapsOtherNode = nodeBodyRects.some((bodyRect) => bodyRect.id !== nodeView.node.id && !(
+        rect.right < bodyRect.left || rect.left > bodyRect.right || rect.bottom < bodyRect.top || rect.top > bodyRect.bottom
+      ));
+      const showOptionalLabel = !nodeView.node.citation_role && optionalLabelCount < labelBudget && !overlaps && !overlapsOtherNode;
+      nodeView.label.visible = isRequiredLabel || showOptionalLabel;
+      if (!isRequiredLabel && showOptionalLabel) optionalLabelCount += 1;
       if (nodeView.label.visible) occupiedLabelRects.push(rect);
     }
   }

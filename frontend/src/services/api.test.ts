@@ -18,6 +18,7 @@ import {
   fetchGraphCitation,
   fetchGraphSimilarity,
   syncPaperCitations,
+  syncCitationMetrics,
   listNotes,
   getNote,
   saveNote,
@@ -421,6 +422,19 @@ describe('API services', () => {
   });
 
   describe('citation graph APIs', () => {
+    it('should batch sync project citation metrics', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ updated: 20, skipped: 1 }),
+      });
+
+      await expect(syncCitationMetrics('project 1')).resolves.toEqual({ updated: 20, skipped: 1 });
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/papers/sync-citation-metrics?project_id=project%201',
+        { method: 'POST' },
+      );
+    });
+
     it('should sync citations and load both citation graph modes', async () => {
       mockFetch
         .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ citation_count: 12 }) })

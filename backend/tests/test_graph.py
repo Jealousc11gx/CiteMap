@@ -241,6 +241,10 @@ def test_build_team_ego_graph_infers_communities_and_paper_nodes(tmp_db):
             "source": "arxiv",
             "arxiv_url": "",
         })
+    conn.execute(
+        "UPDATE papers SET citation_count = 17, reference_count = 29, citation_synced_at = ? WHERE id = 'p1'",
+        ("2026-09-07 10:00:00",),
+    )
     for name in ("Alice", "Bob", "Carol", "Dan"):
         conn.execute("INSERT INTO authors (name) VALUES (?)", (name,))
     author_ids = {
@@ -265,6 +269,12 @@ def test_build_team_ego_graph_infers_communities_and_paper_nodes(tmp_db):
     assert all(team["team_type"] == "inferred" for team in team_nodes)
     assert all(len(team["members"]) == 2 for team in team_nodes)
     assert all(team["paper_count"] == 1 for team in team_nodes)
+    graph_team = next(team for team in team_nodes if team["papers"][0]["id"] == "p1")
+    assert graph_team["citation_count"] == 17
+    assert graph_team["reference_count"] == 29
+    assert graph_team["citation_synced_paper_count"] == 1
+    assert graph.nodes["paper:p1"]["citation_count"] == 17
+    assert graph.nodes["paper:p1"]["reference_count"] == 29
     assert all(
         edge["relation_types"] == ["produced"]
         for _, _, edge in graph.edges(data=True)

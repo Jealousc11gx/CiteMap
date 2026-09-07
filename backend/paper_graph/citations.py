@@ -229,6 +229,70 @@ def sync_citations(paper_id: str, db_path: Optional[Path] = None, neighbor_limit
     }
 
 
+def sync_citation_metrics(
+    db_path: Optional[Path] = None,
+    project_id: str | None = None,
+) -> dict[str, int]:
+    """批量更新本地论文的引用数与参考文献数，不下载引用邻域。"""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    project_join = "JOIN project_papers pp ON pp.paper_id = p.id" if project_id else ""
+    project_where = "WHERE pp.project_id = ?" if project_id else ""
+    rows = [dict(row) for row in conn.execute(
+        f"SELECT p.id, p.arxiv_url FROM papers p {project_join} {project_where}",
+        (project_id,) if project_id else (),
+    ).fetchall()]
+    conn.close()
+
+    candidates = [
+        (paper["id"], arxiv_id)
+        for paper in rows
+        if (arxiv_id := _arxiv_id(paper))
+    ]
+    updated = 0
+    unmatched = 0
+    conn = get_connection(db_path)
+    try:
+        for offset in range(0, len(candidates), 400):
+            chunk = candidates[offset:offset + 400]
+            response = _request_json(
+                "/paper/batch",
+                params={"fields": PAPER_FIELDS},
+                payload={"ids": [f"ARXIV:{arxiv_id}" for _, arxiv_id in chunk]},
+            )
+            for (local_id, _), raw in zip(chunk, response or []):
+                parsed = _paper_payload(raw)
+                if not parsed:
+                    unmatched += 1
+                    continue
+                conn.execute(
+                    """
+                    UPDATE papers
+                    SET semantic_scholar_id = ?, citation_count = ?, reference_count = ?,
+                        venue = COALESCE(venue, ?), venue_year = COALESCE(venue_year, ?)
+                    WHERE id = ?
+                    """,
+                    (
+                        parsed["scholar_id"], parsed.get("citation_count"),
+                        parsed.get("reference_count"), parsed.get("venue"),
+                        parsed.get("year"), local_id,
+                    ),
+                )
+                updated += 1
+            unmatched += max(0, len(chunk) - len(response or []))
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "total": len(rows),
+        "eligible": len(candidates),
+        "updated": updated,
+        "unmatched": unmatched,
+        "skipped": len(rows) - len(candidates),
+    }
+
+
 def _node_id(row: dict[str, Any]) -> str:
     return str(row.get("local_paper_id") or f"s2:{row['scholar_id']}")
 

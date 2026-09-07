@@ -72,6 +72,7 @@ export interface GraphNode {
   members?: string[];
   papers?: GraphPaperReference[];
   paper_count?: number;
+  citation_synced_paper_count?: number;
   paper_id?: string;
   team_type?: "confirmed" | "inferred";
   confidence?: "low" | "medium" | "high";
@@ -96,6 +97,9 @@ export interface GraphPaperReference {
   date?: string;
   venue?: string;
   venue_year?: number;
+  citation_count?: number;
+  reference_count?: number;
+  citation_synced_at?: string;
 }
 
 export interface GraphEdge {

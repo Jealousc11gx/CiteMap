@@ -151,7 +151,8 @@ def build_team_ego_graph(
     params = (project_id,) if project_id else ()
     cur.execute(f"""
         SELECT p.id, p.title, p.published_date, p.core_contribution,
-               p.categories, p.arxiv_url, p.venue, p.venue_year
+               p.categories, p.arxiv_url, p.venue, p.venue_year,
+               p.citation_count, p.reference_count, p.citation_synced_at
         FROM papers p
         {project_join}
         {project_where}
@@ -259,10 +260,17 @@ def build_team_ego_graph(
                 "date": papers[paper_id]["published_date"],
                 "venue": papers[paper_id]["venue"],
                 "venue_year": papers[paper_id]["venue_year"],
+                "citation_count": papers[paper_id]["citation_count"],
+                "reference_count": papers[paper_id]["reference_count"],
+                "citation_synced_at": papers[paper_id]["citation_synced_at"],
             }
             for paper_id in related_paper_ids
         ]
         team_papers.sort(key=lambda paper: paper.get("date") or "", reverse=True)
+        synced_papers = [
+            paper for paper in team_papers
+            if paper.get("citation_count") is not None or paper.get("reference_count") is not None
+        ]
         graph.add_node(
             team_id,
             label=team_label,
@@ -276,6 +284,9 @@ def build_team_ego_graph(
             members=sorted(author_names[author_id] for author_id in community),
             papers=team_papers,
             paper_count=len(team_papers),
+            citation_count=sum(paper.get("citation_count") or 0 for paper in synced_papers) if synced_papers else None,
+            reference_count=sum(paper.get("reference_count") or 0 for paper in synced_papers) if synced_papers else None,
+            citation_synced_paper_count=len(synced_papers),
             latest_paper_date=team_papers[0].get("date") if team_papers else None,
         )
 
@@ -303,6 +314,9 @@ def build_team_ego_graph(
             arxiv_url=paper["arxiv_url"],
             venue=paper["venue"],
             venue_year=paper["venue_year"],
+            citation_count=paper["citation_count"],
+            reference_count=paper["reference_count"],
+            citation_synced_at=paper["citation_synced_at"],
             authors=[author["name"] for author in authors_by_paper[paper_id]],
             institutions=institutions_by_paper[paper_id],
         )
@@ -370,6 +384,7 @@ def build_paper_graph(
     for row in cur.fetchall():
         G.add_node(
             row["id"],
+            paper_id=row["id"],
             label=row["title"][:30] + ("..." if len(row["title"]) > 30 else ""),
             title=row["title"],
             group="paper",
