@@ -116,6 +116,7 @@ function RadarCard({ match, onState }: { match: RadarMatch; onState: (match: Rad
 
 export function Radar() {
   const { activeProject } = useProject();
+  const isSystemProject = Boolean(activeProject?.is_system);
   const projectId = activeProject?.id;
   const [config, setConfig] = useState(EMPTY_CONFIG);
   const [matches, setMatches] = useState<RadarMatch[]>([]);
@@ -300,7 +301,18 @@ export function Radar() {
       )}
       {showSettings && (
         <section className="space-y-4 rounded-xl border bg-card p-4">
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={config.enabled} onChange={(event) => setConfig({ ...config, enabled: event.target.checked })} />启用当前项目雷达</label>
+          <div>
+            <label className={`flex items-center gap-2 text-sm ${isSystemProject ? "text-muted-foreground" : ""}`}>
+              <input
+                type="checkbox"
+                checked={config.enabled}
+                disabled={isSystemProject}
+                onChange={(event) => setConfig({ ...config, enabled: event.target.checked })}
+              />
+              启用当前项目雷达
+            </label>
+            {isSystemProject && <p className="mt-1 text-xs leading-5 text-muted-foreground">未分类项目不能启用雷达。请新建研究项目，将论文加入该项目后再配置。</p>}
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-1 text-sm"><span>arXiv categories</span><Input value={config.categories.join(", ")} onChange={(event) => setConfig({ ...config, categories: splitValues(event.target.value) })} placeholder="cs.AI, cs.CV" /></label>
             <label className="space-y-1 text-sm"><span>关注关键词</span><Input value={config.include_keywords.join(", ")} onChange={(event) => setConfig({ ...config, include_keywords: splitValues(event.target.value) })} placeholder="retrieval, multimodal" /><span className="block text-xs leading-5 text-muted-foreground">标题或摘要命中任一词后才进入语义排序；留空不过滤。</span></label>

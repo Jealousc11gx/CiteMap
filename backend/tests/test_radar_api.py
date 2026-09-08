@@ -44,7 +44,7 @@ def test_radar_config_api_and_system_project_guard(project_client):
         json={"enabled": True, "categories": ["cs.AI"]},
     )
     assert blocked.status_code == 400
-    assert blocked.json()["detail"] == "未分类项目不能启用论文雷达"
+    assert blocked.json()["detail"] == "未分类项目不能启用论文雷达，请新建研究项目后再配置雷达"
 
 
 def test_radar_matches_api_state_and_save(project_client, monkeypatch):

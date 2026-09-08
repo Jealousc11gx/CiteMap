@@ -348,7 +348,7 @@ def api_get_radar_config(project_id: str):
 def api_update_radar_config(project_id: str, req: RadarConfigRequest):
     project = _require_project(project_id)
     if project["is_system"] and req.enabled:
-        raise HTTPException(status_code=400, detail="未分类项目不能启用论文雷达")
+        raise HTTPException(status_code=400, detail="未分类项目不能启用论文雷达，请新建研究项目后再配置雷达")
     init_db(DB_PATH)
     conn = get_connection(DB_PATH)
     try:
