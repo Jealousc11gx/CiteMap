@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 # 添加 backend 到路径
-sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
+sys.path.insert(0, str(Path(__file__).parent / "backend"))
 
 from paper_graph.database import init_db, get_connection, list_papers, get_paper, upsert_paper
 from paper_graph.ingest import ingest_local_pdf, ingest_arxiv_id, search_arxiv_only
