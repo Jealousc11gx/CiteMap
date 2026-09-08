@@ -456,6 +456,10 @@ def build_similarity_graph(paper_id: str, db_path: Optional[Path] = None, max_no
                 shared_references=shared, relation_types=["similarity"],
                 title=f"共同参考文献 {shared} 篇 · 相似度 {similarity:.0%}",
             )
+    # 没有任何正相似边的候选无法参与相似网络，避免渲染成无意义孤立点；Seed 始终保留。
+    seed_node_id = _node_id(paper_rows[seed_id]) if seed_id in paper_rows else None
+    isolated = [node_id for node_id, degree in graph.degree() if degree == 0 and node_id != seed_node_id]
+    graph.remove_nodes_from(isolated)
     for node_id in graph.nodes:
         graph.nodes[node_id]["degree"] = graph.degree(node_id)
         graph.nodes[node_id]["weighted_degree"] = round(graph.degree(node_id, weight="weight"), 3)
