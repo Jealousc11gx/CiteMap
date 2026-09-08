@@ -1,6 +1,7 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,6 +18,7 @@ import {
   addPaperToProject,
   removePaperFromProject,
   fetchAvailablePapers,
+  createNoteTemplate,
 } from "@/services/api";
 import type { Paper, ArxivSearchResult } from "@/types";
 import {
@@ -31,6 +33,9 @@ import {
   FolderPlus,
   FolderMinus,
   FolderInput,
+  BookOpen,
+  Loader2,
+  MoreHorizontal,
 } from "lucide-react";
 import { ErrorAlert } from "@/components/ErrorAlert";
 import { useProject } from "@/contexts/ProjectContext";
@@ -84,6 +89,12 @@ function StatusBadge({
 
 function isAnnotated(paper: Paper) {
   return Boolean(paper.tldr && paper.core_contribution && paper.venue_checked_at);
+}
+
+type PaperStatusFilter = "all" | "pending_annotation" | "missing_pdf" | "with_notes";
+
+function isPaperStatusFilter(value: string | null): value is PaperStatusFilter {
+  return value === "all" || value === "pending_annotation" || value === "missing_pdf" || value === "with_notes";
 }
 
 function SelectAllCheckbox({
@@ -183,12 +194,16 @@ export function Papers() {
   const [importQuery, setImportQuery] = useState("");
   const [loadingAvailable, setLoadingAvailable] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [openingNoteId, setOpeningNoteId] = useState<string | null>(null);
   const [pageError, setPageError] = useState<{
     message: string;
     suggestion?: string;
     onRetry?: () => void;
   } | null>(null);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedStatus = searchParams.get("status");
+  const statusFilter: PaperStatusFilter = isPaperStatusFilter(requestedStatus) ? requestedStatus : "all";
 
   useEffect(() => {
     if (!activeProject) return;
@@ -328,6 +343,18 @@ export function Papers() {
     }
   };
 
+  const handleOpenNote = async (paper: Paper) => {
+    setOpeningNoteId(paper.id);
+    try {
+      if (!paper.note_edited_at) await createNoteTemplate(paper.id);
+      navigate("/notes", { state: { paperId: paper.id, paperTitle: paper.title } });
+    } catch (err) {
+      showToast(`创建笔记草稿失败: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setOpeningNoteId(null);
+    }
+  };
+
   const handleAddToProject = async (projectId: string) => {
     if (!projectDialogPaper) return;
     setAssigningProject(projectId);
@@ -409,8 +436,8 @@ export function Papers() {
   const withPdf = papers.filter((p) => p.pdf_path).length;
 
   const normalizedFilter = localFilter.toLowerCase();
-  const filtered = papers.filter((paper) =>
-    [
+  const filtered = papers.filter((paper) => {
+    const matchesQuery = [
       paper.title,
       paper.abstract,
       paper.tldr,
@@ -424,8 +451,20 @@ export function Papers() {
       .filter(Boolean)
       .join(" ")
       .toLowerCase()
-      .includes(normalizedFilter)
-  );
+      .includes(normalizedFilter);
+    const matchesStatus = statusFilter === "all"
+      || (statusFilter === "pending_annotation" && !isAnnotated(paper))
+      || (statusFilter === "missing_pdf" && paper.source === "arxiv" && !paper.pdf_path)
+      || (statusFilter === "with_notes" && Boolean(paper.note_edited_at));
+    return matchesQuery && matchesStatus;
+  });
+
+  const updateStatusFilter = (value: PaperStatusFilter) => {
+    const next = new URLSearchParams(searchParams);
+    if (value === "all") next.delete("status");
+    else next.set("status", value);
+    setSearchParams(next, { replace: true });
+  };
   const filteredAvailable = availablePapers.filter((paper) => {
     const query = importQuery.trim().toLowerCase();
     if (!query) return true;
@@ -578,14 +617,25 @@ export function Papers() {
 
       {/* Library List */}
       <div className="space-y-3">
-        <div className="flex flex-row items-center justify-between gap-2">
-          <div className="flex flex-row items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-[32rem] flex-1 flex-wrap items-center gap-2">
             <Input
               placeholder="筛选已入库论文..."
               value={localFilter}
               onChange={(e) => setLocalFilter(e.target.value)}
               className="h-9 max-w-sm text-sm"
             />
+            <select
+              aria-label="按处理状态筛选"
+              value={statusFilter}
+              onChange={(event) => updateStatusFilter(event.target.value as PaperStatusFilter)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-xs text-foreground"
+            >
+              <option value="all">全部状态</option>
+              <option value="pending_annotation">待标注</option>
+              <option value="missing_pdf">待下载 PDF</option>
+              <option value="with_notes">有笔记</option>
+            </select>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
               <span>共 {papers.length} 篇</span>
               <span>·</span>
@@ -596,31 +646,33 @@ export function Papers() {
               <span>有 PDF {withPdf}</span>
             </div>
           </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleBatchAnnotate}
-            disabled={batchLoading || pendingAnnotate === 0}
-            className="gap-1 self-start"
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            {batchLoading ? "标注中..." : `批量标注 (${pendingAnnotate})`}
-          </Button>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>模型</span>
-            <select
-              aria-label="标注模型"
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              disabled={batchLoading || Object.values(annotating).some(Boolean)}
-              className="h-8 max-w-[220px] rounded-md border border-input bg-background px-2 text-xs text-foreground"
+          <div className="flex shrink-0 items-center gap-2">
+            <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-muted-foreground">
+              <span>模型</span>
+              <select
+                aria-label="标注模型"
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                disabled={batchLoading || Object.values(annotating).some(Boolean)}
+                className="h-8 max-w-[190px] rounded-md border border-input bg-background px-2 text-xs text-foreground"
+              >
+                {!selectedModel && <option value="">后端默认模型</option>}
+                {llmModels.map((model) => (
+                  <option key={model} value={model}>{model}</option>
+                ))}
+              </select>
+            </label>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleBatchAnnotate}
+              disabled={batchLoading || pendingAnnotate === 0}
+              className="shrink-0 gap-1"
             >
-              {!selectedModel && <option value="">后端默认模型</option>}
-              {llmModels.map((model) => (
-                <option key={model} value={model}>{model}</option>
-              ))}
-            </select>
-          </label>
+              <Sparkles className="h-3.5 w-3.5" />
+              {batchLoading ? "标注中..." : `批量标注 (${pendingAnnotate})`}
+            </Button>
+          </div>
         </div>
 
         {loading ? (
@@ -645,7 +697,7 @@ export function Papers() {
           </div>
         ) : filtered.length === 0 ? (
           <EmptyState
-            filter={Boolean(localFilter)}
+            filter={Boolean(localFilter) || statusFilter !== "all"}
             canImport={Boolean(activeProject && !activeProject.is_system)}
             onImport={() => void openImportDialog()}
             onAdd={() => {
@@ -685,6 +737,20 @@ export function Papers() {
                       className="flex flex-row flex-wrap gap-2"
                       onClick={(e) => e.stopPropagation()}
                     >
+                      <Button
+                        size="sm"
+                        variant={paper.note_edited_at ? "ghost" : "outline"}
+                        className="h-8 text-xs"
+                        onClick={() => void handleOpenNote(paper)}
+                        disabled={openingNoteId === paper.id}
+                      >
+                        {openingNoteId === paper.id ? (
+                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <BookOpen className="mr-1 h-3.5 w-3.5" />
+                        )}
+                        {paper.note_edited_at ? "继续笔记" : "新建笔记"}
+                      </Button>
                       {!paper.pdf_path && paper.source === "arxiv" && (
                         <Button
                           size="sm"
@@ -709,28 +775,43 @@ export function Papers() {
                           ? "标注中..."
                           : isAnnotated(paper) ? "重新标注" : "智能标注"}
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 text-xs"
-                        onClick={() => setProjectDialogPaper(paper)}
-                        title="添加到其他项目"
-                      >
-                        <FolderPlus className="mr-1 h-3.5 w-3.5" />
-                        添加到项目
-                      </Button>
-                      {activeProject && !activeProject.is_system && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 text-xs text-muted-foreground hover:text-destructive"
-                          onClick={() => void handleRemoveFromProject(paper)}
-                          title="从当前项目移除"
-                        >
-                          <FolderMinus className="mr-1 h-3.5 w-3.5" />
-                          移除
-                        </Button>
-                      )}
+                      <DropdownMenu.Root>
+                        <DropdownMenu.Trigger asChild>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-muted-foreground"
+                            title="更多论文操作"
+                            aria-label={`更多操作：${paper.title}`}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenu.Trigger>
+                        <DropdownMenu.Portal>
+                          <DropdownMenu.Content
+                            align="end"
+                            sideOffset={5}
+                            className="z-50 min-w-44 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+                          >
+                            <DropdownMenu.Item
+                              className="flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent"
+                              onSelect={() => setProjectDialogPaper(paper)}
+                            >
+                              <FolderPlus className="h-4 w-4" />
+                              添加到其他项目
+                            </DropdownMenu.Item>
+                            {activeProject && !activeProject.is_system && (
+                              <DropdownMenu.Item
+                                className="flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive outline-none focus:bg-destructive/10"
+                                onSelect={() => void handleRemoveFromProject(paper)}
+                              >
+                                <FolderMinus className="h-4 w-4" />
+                                从当前项目移除
+                              </DropdownMenu.Item>
+                            )}
+                          </DropdownMenu.Content>
+                        </DropdownMenu.Portal>
+                      </DropdownMenu.Root>
                     </div>
                   </div>
                 </CardContent>

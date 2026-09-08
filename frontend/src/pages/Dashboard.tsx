@@ -1,53 +1,41 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { fetchPapers } from "@/services/api";
+import { createNoteTemplate, fetchPapers } from "@/services/api";
 import type { Paper } from "@/types";
 import { ErrorAlert } from "@/components/ErrorAlert";
 import {
-  Library,
-  Sparkles,
-  BookOpen,
-  FileText,
-  TrendingUp,
   ArrowRight,
-  Zap,
-  Network,
+  BookOpen,
+  CheckCircle2,
+  Download,
+  FileText,
+  Library,
+  Loader2,
+  Sparkles,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProject } from "@/contexts/ProjectContext";
 
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  onClick,
-  children,
-}: {
-  label: string;
-  value: number;
-  icon: React.ElementType;
-  onClick: () => void;
-  children?: React.ReactNode;
-}) {
-  return (
-    <Card
-      className="group cursor-pointer rounded-none border-0 bg-transparent transition-colors hover:bg-muted/55"
-      onClick={onClick}
-    >
-      <CardContent className="flex min-h-24 items-start gap-3 p-4">
-        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-          <Icon className="h-3.5 w-3.5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="mt-1 font-mono text-2xl font-semibold tracking-tight">{value}</p>
-          {children}
-        </div>
-      </CardContent>
-    </Card>
-  );
+function isAnnotated(paper: Paper) {
+  return Boolean(paper.tldr && paper.core_contribution && paper.venue_checked_at);
+}
+
+function timestampValue(value?: string) {
+  if (!value) return 0;
+  const normalized = value.includes("T") ? value : `${value.replace(" ", "T")}Z`;
+  const timestamp = new Date(normalized).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function formatDate(value?: string) {
+  const timestamp = timestampValue(value);
+  if (!timestamp) return "时间未知";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "short",
+    day: "numeric",
+  }).format(timestamp);
 }
 
 function EmptyState({ onAction }: { onAction: () => void }) {
@@ -59,10 +47,10 @@ function EmptyState({ onAction }: { onAction: () => void }) {
         </div>
         <h3 className="mt-4 text-base font-semibold">当前项目还没有论文</h3>
         <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-          前往论文管理，从其他项目导入已有论文或入库新论文。
+          从其他项目导入已有论文，或入库一篇新论文。
         </p>
         <Button className="mt-5 gap-2" size="sm" onClick={onAction}>
-          <Zap className="h-4 w-4" />
+          <Library className="h-4 w-4" />
           管理项目论文
         </Button>
       </CardContent>
@@ -74,6 +62,8 @@ export function Dashboard() {
   const { activeProject } = useProject();
   const [papers, setPapers] = useState<Paper[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openingNoteId, setOpeningNoteId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const [pageError, setPageError] = useState<{
     message: string;
     suggestion?: string;
@@ -95,7 +85,7 @@ export function Dashboard() {
       .catch((err) => {
         if (cancelled) return;
         setPageError({
-          message: "加载仪表盘数据失败",
+          message: "加载总览数据失败",
           suggestion: err instanceof Error ? err.message : String(err),
           onRetry: () => window.location.reload(),
         });
@@ -106,31 +96,52 @@ export function Dashboard() {
     };
   }, [activeProject?.id]);
 
-  const stats = {
-    total: papers.length,
-    arxiv: papers.filter((p) => p.source === "arxiv").length,
-    local: papers.filter((p) => p.source === "local").length,
-    annotated: papers.filter((p) => p.tldr && p.core_contribution).length,
-    pending: papers.filter((p) => !p.tldr || !p.core_contribution).length,
-    withNotes: papers.filter((p) => p.note_edited_at).length,
-    withPdf: papers.filter((p) => p.pdf_path).length,
+  const annotated = papers.filter(isAnnotated).length;
+  const withNotes = papers.filter((paper) => paper.note_edited_at).length;
+  const withPdf = papers.filter((paper) => paper.pdf_path).length;
+  const pendingAnnotation = papers.filter((paper) => !isAnnotated(paper)).length;
+  const missingPdf = papers.filter((paper) => paper.source === "arxiv" && !paper.pdf_path).length;
+
+  const recentNotes = useMemo(
+    () => papers
+      .filter((paper) => paper.note_edited_at)
+      .sort((a, b) => timestampValue(b.note_edited_at) - timestampValue(a.note_edited_at))
+      .slice(0, 4),
+    [papers],
+  );
+
+  const recentAdded = useMemo(
+    () => [...papers]
+      .sort((a, b) => timestampValue(b.created_at) - timestampValue(a.created_at))
+      .slice(0, 5),
+    [papers],
+  );
+
+  const openNote = async (paper: Paper) => {
+    setOpeningNoteId(paper.id);
+    try {
+      if (!paper.note_edited_at) await createNoteTemplate(paper.id);
+      navigate("/notes", { state: { paperId: paper.id, paperTitle: paper.title } });
+    } catch (err) {
+      setToast(`创建笔记草稿失败: ${err instanceof Error ? err.message : String(err)}`);
+      window.setTimeout(() => setToast(null), 3000);
+    } finally {
+      setOpeningNoteId(null);
+    }
   };
-
-  const annotationRate =
-    stats.total > 0 ? Math.round((stats.annotated / stats.total) * 100) : 0;
-  const notesRate =
-    stats.total > 0 ? Math.round((stats.withNotes / stats.total) * 100) : 0;
-  const pdfRate =
-    stats.total > 0 ? Math.round((stats.withPdf / stats.total) * 100) : 0;
-
-  const recent = papers.slice(0, 5);
 
   return (
     <div className="space-y-5">
+      {toast && (
+        <div className="fixed right-3 top-20 z-50 rounded-md border bg-card px-3 py-2 text-sm shadow-sm" role="status">
+          {toast}
+        </div>
+      )}
+
       <div className="flex items-end justify-between gap-6">
         <div>
           <h1 className="workspace-heading">{activeProject?.name || "项目"}</h1>
-          <p className="workspace-description">论文状态、知识关系、研究笔记集中概览。</p>
+          <p className="workspace-description">继续最近的研究，处理仍需整理的论文。</p>
         </div>
         <Button variant="outline" size="sm" className="gap-1.5" onClick={() => navigate("/papers")}>
           <Library className="h-3.5 w-3.5" />
@@ -148,248 +159,173 @@ export function Dashboard() {
       )}
 
       {loading ? (
-        <div className="grid grid-cols-4 divide-x overflow-hidden rounded-lg border bg-card">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Card key={i} className="rounded-none border-0">
-              <CardContent className="p-5">
-                <Skeleton className="h-4 w-20" />
-                <Skeleton className="mt-2 h-8 w-16" />
-              </CardContent>
-            </Card>
-          ))}
+        <div className="space-y-4">
+          <Skeleton className="h-16 w-full" />
+          <div className="grid grid-cols-3 gap-4">
+            <Skeleton className="col-span-2 h-72 w-full" />
+            <Skeleton className="h-72 w-full" />
+          </div>
+          <Skeleton className="h-72 w-full" />
         </div>
-      ) : stats.total === 0 ? (
+      ) : papers.length === 0 ? (
         <EmptyState onAction={() => navigate("/papers")} />
       ) : (
         <>
-          {/* Stats Grid */}
-          <div className="grid grid-cols-4 divide-x overflow-hidden rounded-lg border bg-card">
-            <StatCard
-              label="总论文数"
-              value={stats.total}
-              icon={Library}
-              onClick={() => navigate("/papers")}
-            />
-            <StatCard
-              label="已标注"
-              value={stats.annotated}
-              icon={Sparkles}
-              onClick={() => navigate("/papers")}
-            >
-              <div className="mt-1.5">
-                <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>标注率</span>
-                  <span className="font-medium text-foreground">{annotationRate}%</span>
-                </div>
-                <div className="h-1 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary transition-all duration-500"
-                    style={{ width: `${annotationRate}%` }}
-                  />
-                </div>
+          <div className="flex items-center divide-x overflow-hidden rounded-lg border bg-card">
+            {[
+              { label: "论文", value: papers.length },
+              { label: "已标注", value: annotated },
+              { label: "有笔记", value: withNotes },
+              { label: "有 PDF", value: withPdf },
+            ].map((item) => (
+              <div key={item.label} className="flex min-w-0 flex-1 items-baseline gap-2 px-4 py-3">
+                <span className="font-mono text-lg font-semibold">{item.value}</span>
+                <span className="text-xs text-muted-foreground">{item.label}</span>
               </div>
-            </StatCard>
-            <StatCard
-              label="有笔记"
-              value={stats.withNotes}
-              icon={BookOpen}
-              onClick={() => navigate("/notes")}
-            >
-              <p className="mt-1 text-[11px] text-muted-foreground">覆盖率 {notesRate}%</p>
-            </StatCard>
-            <StatCard
-              label="有 PDF"
-              value={stats.withPdf}
-              icon={FileText}
-              onClick={() => navigate("/papers")}
-            >
-              <p className="mt-1 text-[11px] text-muted-foreground">覆盖率 {pdfRate}%</p>
-            </StatCard>
+            ))}
           </div>
 
-          {/* Main Content Grid */}
           <div className="grid grid-cols-3 gap-4">
-            {/* Library Health */}
-            <Card className="col-span-1 border-border/60">
-              <CardHeader className="pb-2 pt-4">
-                <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-                  <TrendingUp className="h-4 w-4 text-primary" />
-                  知识库健康度
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 pb-4">
-                <div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">论文标注率</span>
-                    <span className="font-medium text-foreground">{annotationRate}%</span>
-                  </div>
-                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all duration-700"
-                      style={{ width: `${annotationRate}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">笔记覆盖率</span>
-                    <span className="font-medium text-foreground">{notesRate}%</span>
-                  </div>
-                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-slate-400 transition-all duration-700 dark:bg-slate-500"
-                      style={{ width: `${notesRate}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">PDF 完整率</span>
-                    <span className="font-medium text-foreground">{pdfRate}%</span>
-                  </div>
-                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-slate-300 transition-all duration-700 dark:bg-slate-600"
-                      style={{ width: `${pdfRate}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="rounded-md bg-muted/50 p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
-                      <Sparkles className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">待标注论文</p>
-                      <p className="text-xl font-semibold">{stats.pending}</p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Recent Papers */}
             <Card className="col-span-2 border-border/60">
               <CardHeader className="flex flex-row items-center justify-between pb-2 pt-4">
-                <CardTitle className="text-sm font-semibold">最近入库</CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() => navigate("/papers")}
-                >
-                  查看全部
-                  <ArrowRight className="h-3 w-3" />
-                </Button>
+                <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                  <BookOpen className="h-4 w-4 text-primary" />
+                  继续研究
+                </CardTitle>
+                {recentNotes.length > 0 && (
+                  <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => navigate("/notes")}>
+                    全部笔记
+                    <ArrowRight className="h-3 w-3" />
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="pb-3 pt-0">
-                {loading ? (
-                  <div className="space-y-3">
-                    {Array.from({ length: 4 }).map((_, i) => (
-                      <div key={i} className="space-y-2">
-                        <Skeleton className="h-4 w-3/4" />
-                        <Skeleton className="h-3 w-1/3" />
-                      </div>
-                    ))}
+                {recentNotes.length === 0 ? (
+                  <div className="flex min-h-52 flex-col items-center justify-center text-center">
+                    <BookOpen className="h-7 w-7 text-muted-foreground" />
+                    <p className="mt-3 text-sm font-medium">还没有正式笔记</p>
+                    <p className="mt-1 text-xs text-muted-foreground">从一篇论文开始记录观点、疑问与关联。</p>
+                    <Button variant="outline" size="sm" className="mt-4" onClick={() => navigate("/papers")}>
+                      选择论文
+                    </Button>
                   </div>
                 ) : (
                   <div className="divide-y divide-border/60">
-                    {recent.map((paper) => (
-                      <button
-                        key={paper.id}
-                        onClick={() => navigate(`/papers/${paper.id}`)}
-                        className="flex w-full items-start justify-between gap-3 py-3 text-left transition-colors hover:bg-muted/40"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <h3 className="line-clamp-1 text-sm font-medium text-foreground">
-                            {paper.title}
-                          </h3>
-                          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                            <span className="rounded bg-muted px-1.5 py-0.5 font-medium">
-                              {paper.source === "arxiv" ? "arXiv" : "本地"}
-                            </span>
-                            <span>{paper.published_date}</span>
-                            {paper.authors && paper.authors.length > 0 && (
-                              <>
-                                <span>·</span>
-                                <span className="max-w-[120px] truncate">
-                                  {paper.authors.slice(0, 2).join(", ")}
-                                  {paper.authors.length > 2 && " et al."}
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        {paper.tldr && paper.core_contribution ? (
-                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400">
-                            <Sparkles className="h-3 w-3" />
-                            已标注
+                    {recentNotes.map((paper) => (
+                      <div key={paper.id} className="flex min-h-14 items-center gap-3 py-2.5">
+                        <button
+                          className="min-w-0 flex-1 text-left"
+                          onClick={() => void openNote(paper)}
+                        >
+                          <span className="block truncate text-sm font-medium">{paper.title}</span>
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            最后编辑 {formatDate(paper.note_edited_at)}
                           </span>
-                        ) : (
-                          <span className="inline-flex shrink-0 items-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                            未标注
-                          </span>
-                        )}
-                      </button>
+                        </button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 shrink-0 gap-1.5 text-xs"
+                          onClick={() => void openNote(paper)}
+                          disabled={openingNoteId === paper.id}
+                        >
+                          {openingNoteId === paper.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BookOpen className="h-3.5 w-3.5" />}
+                          继续笔记
+                        </Button>
+                      </div>
                     ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/60">
+              <CardHeader className="pb-2 pt-4">
+                <CardTitle className="text-sm font-semibold">待处理</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 pb-4">
+                <button
+                  className="flex w-full items-center gap-3 rounded-md border p-3 text-left transition-colors hover:bg-muted/50 disabled:cursor-default disabled:opacity-60"
+                  onClick={() => navigate("/papers?status=pending_annotation")}
+                  disabled={pendingAnnotation === 0}
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                    <Sparkles className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium">待智能标注</span>
+                    <span className="hidden text-xs text-muted-foreground xl:block">生成 TL;DR 与核心贡献</span>
+                  </span>
+                  <span className="font-mono text-lg font-semibold">{pendingAnnotation}</span>
+                </button>
+
+                <button
+                  className="flex w-full items-center gap-3 rounded-md border p-3 text-left transition-colors hover:bg-muted/50 disabled:cursor-default disabled:opacity-60"
+                  onClick={() => navigate("/papers?status=missing_pdf")}
+                  disabled={missingPdf === 0}
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                    <Download className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium">待下载 PDF</span>
+                    <span className="hidden text-xs text-muted-foreground xl:block">补全可获取的 arXiv 原文</span>
+                  </span>
+                  <span className="font-mono text-lg font-semibold">{missingPdf}</span>
+                </button>
+
+                {pendingAnnotation === 0 && missingPdf === 0 && (
+                  <div className="flex items-center gap-2 px-1 pt-2 text-xs text-muted-foreground">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    当前没有待处理项
                   </div>
                 )}
               </CardContent>
             </Card>
           </div>
 
-          {/* Quick Actions */}
-          <div className="grid grid-cols-3 divide-x overflow-hidden rounded-lg border bg-card">
-            {[
-              {
-                icon: Library,
-                label: "管理论文",
-                desc: "入库、标注、搜索",
-                path: "/papers",
-                accent: true,
-              },
-              {
-                icon: Network,
-                label: "查看图谱",
-                desc: "团队与论文关系",
-                path: "/graph",
-                accent: false,
-              },
-              {
-                icon: Sparkles,
-                label: "智能聊天",
-                desc: "向 AI 提问论文内容",
-                path: "/chat",
-                accent: false,
-              },
-            ].map((item) => (
-              <Card
-                key={item.label}
-                className="group cursor-pointer rounded-none border-0 transition-colors hover:bg-muted/55"
-                onClick={() => navigate(item.path)}
-              >
-                <CardContent className="flex items-center gap-3 p-4">
-                  <div
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors ${
-                      item.accent
-                        ? "bg-primary/10 text-primary group-hover:bg-primary/15"
-                        : "bg-muted text-muted-foreground group-hover:bg-muted/80"
-                    }`}
-                  >
-                    <item.icon className="h-4 w-4" />
+          <Card className="border-border/60">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 pt-4">
+              <CardTitle className="text-sm font-semibold">最近入库</CardTitle>
+              <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => navigate("/papers")}>
+                查看全部
+                <ArrowRight className="h-3 w-3" />
+              </Button>
+            </CardHeader>
+            <CardContent className="pb-3 pt-0">
+              <div className="divide-y divide-border/60">
+                {recentAdded.map((paper) => (
+                  <div key={paper.id} className="flex items-center gap-3 py-3">
+                    <button
+                      className="min-w-0 flex-1 text-left"
+                      onClick={() => navigate(`/papers/${paper.id}`)}
+                    >
+                      <span className="block truncate text-sm font-medium">{paper.title}</span>
+                      <span className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>{paper.source === "arxiv" ? "arXiv" : "本地"}</span>
+                        <span>入库 {formatDate(paper.created_at)}</span>
+                        {paper.venue && <span className="text-foreground">{paper.venue} {paper.venue_year || ""}</span>}
+                      </span>
+                    </button>
+                    <span className="hidden items-center gap-1 text-xs text-muted-foreground xl:flex">
+                      {paper.pdf_path ? <FileText className="h-3.5 w-3.5" /> : null}
+                      {isAnnotated(paper) ? <Sparkles className="h-3.5 w-3.5" /> : null}
+                    </span>
+                    <Button
+                      variant={paper.note_edited_at ? "ghost" : "outline"}
+                      size="sm"
+                      className="h-8 shrink-0 gap-1.5 text-xs"
+                      onClick={() => void openNote(paper)}
+                      disabled={openingNoteId === paper.id}
+                    >
+                      {openingNoteId === paper.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BookOpen className="h-3.5 w-3.5" />}
+                      {paper.note_edited_at ? "继续笔记" : "新建笔记"}
+                    </Button>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{item.label}</p>
-                    <p className="text-[11px] text-muted-foreground">{item.desc}</p>
-                  </div>
-                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-all group-hover:translate-x-1 group-hover:opacity-100" />
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </>
       )}
     </div>

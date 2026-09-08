@@ -4,6 +4,18 @@
 
 Windows、macOS、Linux 使用相同云端配置。本机不需要安装 Wrangler，不需要复制 Worker JS 或 D1 SQL。
 
+> 说明：当前 workflow 的自动触发分支是 `main`。如果你从其他分支开发，先合并到自己 Fork 的 `main`，再运行部署；只在功能分支上 push 不会触发生产部署。
+
+## 0. 开启 Actions 权限
+
+Fork 仓库后，打开 `Settings → Actions → General`：
+
+- `Actions permissions` 选择允许使用 Actions；
+- `Workflow permissions` 选择 `Read repository contents permission`；
+- 若仓库使用 Environment，确认 `radar-production` 已创建，或在 workflow 设置中批准首次部署。
+
+首次部署建议按以下顺序执行：创建 D1 → 配置 Worker Secrets → 手动运行 `Deploy Radar Worker` → 写入 `RADAR_REMOTE_URL` → 手动运行 `CiteMap Radar Test` → 手动运行正式 `CiteMap Radar`。
+
 ## 1. Fork 仓库
 
 Fork `Jealousc11gx/CiteMap`。后续 Secrets、Variables、Actions 均在自己的 Fork 中配置。

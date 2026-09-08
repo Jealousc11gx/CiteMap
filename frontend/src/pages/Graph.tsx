@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import {
   ArrowLeft,
@@ -408,6 +408,8 @@ function DetailPanel({
 export function Graph() {
   const { activeProject, loading: projectLoading, error: projectError, refreshProjects } = useProject();
   const navigate = useNavigate();
+  const location = useLocation();
+  const entryPaperId = (location.state as { highlightPaperId?: string } | null)?.highlightPaperId || "";
   const graphRef = useRef<PixiGraphHandle>(null);
   const [view, setView] = useState<GraphView>("team");
   const [teamData, setTeamData] = useState<GraphData | null>(null);
@@ -473,10 +475,16 @@ export function Graph() {
     }
     setSeedPaperId((current) => {
       if (nodes.some((node) => node.id === current)) return current;
+      if (entryPaperId && nodes.some((node) => node.id === entryPaperId)) return entryPaperId;
       const saved = activeProject ? window.localStorage.getItem(`citemap.graph.seed.${activeProject.id}`) : null;
       return saved && nodes.some((node) => node.id === saved) ? saved : "";
     });
-  }, [paperData, activeProject]);
+    const entryNode = entryPaperId ? nodes.find((node) => node.id === entryPaperId) : null;
+    if (entryNode) {
+      setSelectedNode(entryNode);
+      setSelectedEdge(null);
+    }
+  }, [paperData, activeProject, entryPaperId]);
 
   const selectSeedPaper = (paperId: string) => {
     setSeedPaperId(paperId);

@@ -83,7 +83,8 @@ function clamp(value: number, min: number, max: number): number {
 function getNodeRadius(node: GraphNode): number {
   const base = node.group === "team" ? 28 : node.is_seed ? 15 : 11;
   if (node.citation_count !== undefined && node.citation_count !== null) {
-    return base + Math.min(node.group === "team" ? 14 : 18, Math.log10(node.citation_count + 10) * 4.2);
+    // 引用数跨度通常很大，使用对数映射保留差异，同时扩大视觉分级。
+    return base + Math.min(node.group === "team" ? 22 : 30, Math.log10(node.citation_count + 1) * 7);
   }
   const weightedDegree = Math.max(0, node.weighted_degree || node.degree || 0);
   return base + Math.min(node.group === "team" ? 12 : 7, Math.log2(weightedDegree + 1) * 2.2);

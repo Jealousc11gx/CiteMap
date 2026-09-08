@@ -525,7 +525,8 @@ def list_papers(
         params.append(source)
     if conditions:
         sql += " WHERE " + " AND ".join(conditions)
-    sql += " ORDER BY p.published_date DESC"
+    # 列表优先展示最近入库的论文，发表日期仅作为历史数据的次级排序。
+    sql += " ORDER BY p.created_at DESC, p.published_date DESC, p.id ASC"
     df = pd.read_sql_query(sql, conn, params=params)
     conn.close()
     # Ensure JSON-safe output by replacing NaN/NaT with None
