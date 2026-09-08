@@ -82,3 +82,20 @@ def test_merge_email_items_keeps_click_url_and_generated_ai_fields():
         "affiliations": ["测试大学"],
         "click_url": "https://radar/r/1",
     }]
+
+
+def test_radar_logs_default_notice_when_project_has_no_candidates(monkeypatch, capsys):
+    FakeRemoteClient.projects = [_project()]
+    monkeypatch.setenv("RADAR_REMOTE_URL", "https://radar.example")
+    monkeypatch.setenv("RADAR_REMOTE_TOKEN", "token")
+    monkeypatch.setattr(radar_cli, "RadarRemoteClient", FakeRemoteClient)
+    monkeypatch.setattr(radar_cli, "fetch_arxiv_candidates", lambda *args, **kwargs: [])
+    monkeypatch.setattr(radar_cli, "get_embedding_provider", lambda: object())
+    monkeypatch.setattr(radar_cli, "rank_candidates", lambda *args, **kwargs: [])
+
+    radar_cli.run_remote_radar()
+
+    output = capsys.readouterr().out
+    assert "暂无符合条件的论文" in output
+    assert "categories=cs.AI" in output
+    assert "include_keywords=无关键词限制" in output

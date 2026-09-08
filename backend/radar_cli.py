@@ -92,6 +92,14 @@ def run_remote_radar() -> dict:
             candidates = [dict(HISTORICAL_TEST_CANDIDATE)]
             print(f"[radar] project={project_id} using_historical_test=2508.13434")
         print(f"[radar] project={project_id} candidates_after_filter={len(candidates)}")
+        if not candidates:
+            categories = ", ".join(str(value) for value in (project.get("categories") or ["cs.AI"]))
+            keywords = ", ".join(str(value) for value in (project.get("include_keywords") or [])) or "无关键词限制"
+            print(
+                f"[radar] project={project_id} notice=暂无符合条件的论文；"
+                f"categories={categories} include_keywords={keywords}；"
+                "建议检查 categories、关注关键词，或稍后再次运行"
+            )
         references = project.get("reference_papers") or []
         if not references:
             print(f"[radar] project={project_id} skipped=no_reference_papers; 请在 CiteMap 中连接并发布画像")
