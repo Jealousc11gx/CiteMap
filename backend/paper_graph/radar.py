@@ -15,6 +15,28 @@ import requests
 
 from .database import get_connection
 
+DEFAULT_RADAR_CATEGORIES = ["cs.AI"]
+ARXIV_CATEGORY_PREFIXES = {
+    "cs", "econ", "eess", "hep-ex", "hep-lat", "hep-ph", "hep-th", "math",
+    "nlin", "nucl-ex", "nucl-th", "physics", "q-bio", "q-fin", "quant-ph", "stat",
+    "astro-ph", "cond-mat", "gr-qc", "adap-org", "cmp-lg", "comp-gas", "funct-an",
+    "q-alg", "q-hum", "solv-int", "supr-con", "alg-geom", "dg-ga", "patt-sol",
+}
+
+
+def validate_radar_categories(categories: Optional[list[str]]) -> list[str]:
+    normalized = [str(value).strip() for value in (categories or []) if str(value).strip()]
+    if not normalized:
+        return list(DEFAULT_RADAR_CATEGORIES)
+    invalid = []
+    for category in normalized:
+        prefix, separator, suffix = category.partition(".")
+        if not separator or prefix.casefold() not in ARXIV_CATEGORY_PREFIXES or not suffix or not suffix.replace("-", "").isalnum():
+            invalid.append(category)
+    if invalid:
+        raise ValueError(f"无效的 arXiv categories: {', '.join(invalid)}。示例：cs.AI、cs.CV、stat.ML")
+    return normalized
+
 
 RADAR_STATES = {"unread", "read", "saved", "dismissed"}
 RADAR_OPERATIONS = {"read", "save", "dismiss"}
@@ -46,7 +68,7 @@ def get_radar_config(conn: sqlite3.Connection, project_id: str) -> dict:
         return {
             "project_id": project_id,
             "enabled": False,
-            "categories": [],
+            "categories": list(DEFAULT_RADAR_CATEGORIES),
             "include_keywords": [],
             "exclude_keywords": [],
             "profile_override": "",
@@ -95,6 +117,7 @@ def upsert_radar_config(
         raise ValueError("雷达抓取数量必须在 1 到 500 之间")
     if compute_mode not in {"cloud", "local", "hybrid"}:
         raise ValueError("雷达计算模式必须是 cloud、local 或 hybrid")
+    categories = validate_radar_categories(categories)
     conn.execute(
         """
         INSERT INTO radar_configs (
@@ -121,7 +144,7 @@ def upsert_radar_config(
         (
             project_id,
             int(enabled),
-            _json(categories or []),
+            _json(categories),
             _json(include_keywords or []),
             _json(exclude_keywords or []),
             profile_override.strip(),
@@ -483,9 +506,7 @@ def _atom_entry_to_candidate(entry: object) -> dict:
 
 def fetch_arxiv_candidates(categories: list[str], max_results: int = 100, include_cross_list: bool = True) -> list[dict]:
     """从 arXiv 每日 Atom feed 获取新候选，不访问易限流的分类查询 API。"""
-    normalized = [str(category).strip() for category in categories if str(category).strip()]
-    if not normalized:
-        raise ValueError("论文雷达至少需要一个 arXiv category")
+    normalized = validate_radar_categories(categories)
     query = quote("+".join(normalized), safe="+.")
     response = requests.get(
         f"https://rss.arxiv.org/atom/{query}",

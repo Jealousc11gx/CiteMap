@@ -74,7 +74,7 @@ CiteMap 的论文雷达由 GitHub Actions 执行抓取、相似度排序、中�
 
 | 参数 | 说明 | 建议 |
 |---|---|---|
-| `arXiv categories` | 抓取范围，如 `cs.AI, cs.CV` | 至少填写一个 |
+| `arXiv categories` | 抓取范围，如 `cs.AI, cs.CV` | 默认 `cs.AI`；可填写多个 |
 | `关注关键词` | 标题/摘要命中后保留 | 可留空 |
 | `排除关键词` | 标题/摘要命中后排除 | 可留空 |
 | `Top K` | 每次保留的推荐数量 | `10` |
@@ -84,5 +84,7 @@ CiteMap 的论文雷达由 GitHub Actions 执行抓取、相似度排序、中�
 | `没有推荐时也发送邮件` | 空结果是否发信 | 按需开启 |
 
 当前雷达排序固定使用历史 `zotero-arxiv-daily` 算法。项目设置中的 `最低分数`、anchor 论文不参与排序。
+
+categories 必须使用 arXiv 分类格式，例如 `cs.AI`、`cs.CV`、`stat.ML`。写成 `cd.AI`、缺少点号、使用不存在的分类时，保存或扫描会提示具体错误；留空自动使用 `cs.AI`。
 
 详细说明见 [`docs/radar-github-action-setup.md`](docs/radar-github-action-setup.md)。

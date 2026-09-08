@@ -17,7 +17,7 @@ import type { RadarConfig, RadarMatch, RadarState } from "@/types";
 
 const EMPTY_CONFIG: Omit<RadarConfig, "project_id" | "updated_at"> = {
   enabled: false,
-  categories: [],
+  categories: ["cs.AI"],
   include_keywords: [],
   exclude_keywords: [],
   profile_override: "",
@@ -72,6 +72,15 @@ function saveRadarConnection(remoteUrl: string, remoteToken: string) {
 
 function splitValues(value: string) {
   return value.split(/[\n,，]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function validateCategories(categories: string[]): string | null {
+  const prefixes = new Set(["cs", "econ", "eess", "hep-ex", "hep-lat", "hep-ph", "hep-th", "math", "nlin", "nucl-ex", "nucl-th", "physics", "q-bio", "q-fin", "quant-ph", "stat", "astro-ph", "cond-mat", "gr-qc"]);
+  const invalid = categories.filter((category) => {
+    const [prefix, suffix] = category.split(".", 2);
+    return !prefix || !suffix || !prefixes.has(prefix.toLowerCase()) || !/^[A-Za-z0-9-]+$/.test(suffix);
+  });
+  return invalid.length ? `无效的 arXiv categories：${invalid.join(", ")}。示例：cs.AI、cs.CV、stat.ML` : null;
 }
 
 function RadarCard({ match, onState }: { match: RadarMatch; onState: (match: RadarMatch, state: RadarState) => void }) {
@@ -142,7 +151,7 @@ export function Radar() {
     setError(null);
     try {
       const [nextConfig, nextMatches] = await Promise.all([fetchRadarConfig(projectId), fetchRadarMatches(projectId)]);
-      setConfig(nextConfig);
+      setConfig({ ...nextConfig, categories: nextConfig.categories.length ? nextConfig.categories : ["cs.AI"] });
       setMatches(nextMatches);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -177,6 +186,11 @@ export function Radar() {
 
   const saveConfig = async () => {
     if (!projectId) return;
+    const categoryError = validateCategories(config.categories);
+    if (categoryError) {
+      setError(categoryError);
+      return;
+    }
     setSavingConfig(true);
     try {
       const updated = await updateRadarConfig(projectId, config);

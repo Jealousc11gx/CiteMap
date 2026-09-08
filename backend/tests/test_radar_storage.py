@@ -26,6 +26,16 @@ from paper_graph.radar import (
 )
 
 
+def test_radar_categories_default_and_validation(tmp_db):
+    conn = get_connection(tmp_db)
+    project = create_project(conn, "Category defaults")
+    config = upsert_radar_config(conn, project["id"], categories=[])
+    assert config["categories"] == ["cs.AI"]
+    with pytest.raises(ValueError, match=r"无效的 arXiv categories: cd\.AI。示例：cs\.AI、cs\.CV、stat\.ML"):
+        upsert_radar_config(conn, project["id"], categories=["cd.AI"])
+    conn.close()
+
+
 def test_radar_config_defaults_and_upsert(tmp_db):
     conn = get_connection(tmp_db)
     project = create_project(conn, "Radar Project")
