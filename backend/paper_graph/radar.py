@@ -473,7 +473,8 @@ def _arxiv_result_to_candidate(result: object) -> dict:
 def _atom_entry_to_candidate(entry: object) -> dict:
     """将 arXiv 每日 Atom 条目转换为雷达候选，不再二次请求 export API。"""
     entry_id = str(entry.get("id") or "").removeprefix("oai:arXiv.org:")
-    arxiv_id = re.sub(r"v\d+$", "", entry_id)
+    arxiv_id = entry_id.rstrip("/").rsplit("/", 1)[-1]
+    arxiv_id = re.sub(r"v\d+$", "", arxiv_id)
     abstract = str(entry.get("summary") or "")
     abstract = re.sub(
         r"^arXiv:.*?Announce Type:\s*\w+\s*Abstract:\s*",
@@ -487,7 +488,10 @@ def _atom_entry_to_candidate(entry: object) -> dict:
         for tag in (entry.get("tags") or [])
         if str(tag.get("term") or "").strip()
     ]
-    creator = str(entry.get("author") or entry.get("dc_creator") or "")
+    creator_value = entry.get("author") or entry.get("dc_creator") or ""
+    if isinstance(creator_value, dict):
+        creator_value = creator_value.get("name") or creator_value.get("#text") or ""
+    creator = str(creator_value)
     authors = [author.strip() for author in creator.split(",") if author.strip()]
     arxiv_url = str(entry.get("link") or f"https://arxiv.org/abs/{arxiv_id}")
     return {
@@ -505,7 +509,7 @@ def _atom_entry_to_candidate(entry: object) -> dict:
 
 
 def fetch_arxiv_candidates(categories: list[str], max_results: int = 100, include_cross_list: bool = True) -> list[dict]:
-    """从 arXiv 每日 Atom feed 获取新候选，不访问易限流的分类查询 API。"""
+    """优先读取每日 Atom feed；feed 为空时回退到 arXiv API，保证手动运行有候选。"""
     normalized = validate_radar_categories(categories)
     query = quote("+".join(normalized), safe="+.")
     response = requests.get(
@@ -527,6 +531,38 @@ def fetch_arxiv_candidates(categories: list[str], max_results: int = 100, includ
         announce_type = str(entry.get("arxiv_announce_type") or "new").casefold()
         candidate = _atom_entry_to_candidate(entry)
         if announce_type not in allowed_types or not candidate["arxiv_id"] or candidate["arxiv_id"] in seen:
+            continue
+        seen.add(candidate["arxiv_id"])
+        candidates.append(candidate)
+        if len(candidates) >= max_results:
+            break
+    if candidates:
+        return candidates
+
+    # RSS 只在 arXiv 公告窗口提供条目。手动运行常发生在窗口之外，使用 API
+    # 回退读取最近提交的论文，Worker 负责按 arxiv_id 去重。
+    search_query = " OR ".join(f"cat:{category}" for category in normalized)
+    api_response = requests.get(
+        "https://export.arxiv.org/api/query",
+        params={
+            "search_query": search_query,
+            "start": 0,
+            "max_results": max_results,
+            "sortBy": "submittedDate",
+            "sortOrder": "descending",
+        },
+        headers={"User-Agent": "CiteMap/0.4 (+https://github.com/Jealousc11gx/CiteMap)"},
+        timeout=30,
+    )
+    api_response.raise_for_status()
+    api_feed = feedparser.parse(api_response.content)
+    for entry in api_feed.entries:
+        candidate = _atom_entry_to_candidate(entry)
+        if not candidate["arxiv_id"] or candidate["arxiv_id"] in seen:
+            continue
+        if not set(candidate["categories"]).intersection(normalized):
+            continue
+        if not include_cross_list and candidate["primary_category"] not in normalized:
             continue
         seen.add(candidate["arxiv_id"])
         candidates.append(candidate)

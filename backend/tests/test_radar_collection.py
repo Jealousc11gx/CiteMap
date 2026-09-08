@@ -58,6 +58,21 @@ def test_fetch_arxiv_candidates_can_exclude_cross_list(monkeypatch):
     assert [item["arxiv_id"] for item in candidates] == ["2609.00001"]
 
 
+def test_fetch_arxiv_candidates_falls_back_to_export_api_when_atom_is_empty(monkeypatch):
+    empty = SimpleNamespace(content=b"<feed xmlns='http://www.w3.org/2005/Atom'><title>empty</title></feed>", raise_for_status=lambda: None)
+    api = SimpleNamespace(content=ATOM_FEED, raise_for_status=lambda: None)
+    requested = []
+
+    def fake_get(url, **kwargs):
+        requested.append(url)
+        return empty if url.startswith("https://rss.arxiv.org") else api
+
+    monkeypatch.setattr(radar.requests, "get", fake_get)
+    candidates = fetch_arxiv_candidates(["cs.AI"], max_results=5)
+    assert requested == ["https://rss.arxiv.org/atom/cs.AI", "https://export.arxiv.org/api/query"]
+    assert candidates[0]["arxiv_id"] == "2609.00001"
+
+
 def candidate(arxiv_id: str, title: str, categories=None, abstract=""):
     return {
         "arxiv_id": arxiv_id,
