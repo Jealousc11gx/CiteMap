@@ -67,16 +67,16 @@ def run_remote_radar() -> dict:
     projects = projects_payload.get("projects") or []
     test_mode = _env_bool("RADAR_TEST_MODE")
     use_historical_test = test_mode and _env_bool("RADAR_TEST_USE_HISTORICAL")
-    debug = _env_bool("RADAR_DEBUG")
-    if debug:
-        print(f"[radar] projects={len(projects)} test_mode={test_mode}")
+    print(f"[radar] start projects={len(projects)} test_mode={test_mode}")
     if test_mode and not projects:
         raise RuntimeError("Radar Test 无法执行：云端没有项目 profile")
     for project in projects:
-        if not project.get("enabled", False):
-            continue
-        project_id = project["project_id"]
+        project_id = project.get("project_id") or "unknown"
         project_name = str(project.get("project_name") or project_id)
+        if not project.get("enabled", False):
+            print(f"[radar] project={project_id} name={project_name} skipped=disabled")
+            continue
+        print(f"[radar] project={project_id} name={project_name} status=running")
         fetch_limit = int(project.get("fetch_limit", 100))
         top_k = int(project.get("top_k", 10))
         if test_mode:
@@ -90,12 +90,11 @@ def run_remote_radar() -> dict:
         candidates = [candidate for candidate in candidates if candidate_matches_config(candidate, project)]
         if use_historical_test and not candidates:
             candidates = [dict(HISTORICAL_TEST_CANDIDATE)]
-            if debug:
-                print(f"[radar] project={project_id} using_historical_test=2508.13434")
-        if debug:
-            print(f"[radar] project={project_id} candidates_after_filter={len(candidates)}")
+            print(f"[radar] project={project_id} using_historical_test=2508.13434")
+        print(f"[radar] project={project_id} candidates_after_filter={len(candidates)}")
         references = project.get("reference_papers") or []
         if not references:
+            print(f"[radar] project={project_id} skipped=no_reference_papers; 请在 CiteMap 中连接并发布画像")
             continue
         ranked = rank_candidates(
             candidates,
@@ -103,8 +102,7 @@ def run_remote_radar() -> dict:
             embedding_provider=get_embedding_provider(),
             top_k=top_k,
         )
-        if debug:
-            print(f"[radar] project={project_id} ranked={len(ranked)}")
+        print(f"[radar] project={project_id} ranked={len(ranked)}")
         if not ranked:
             if project.get("send_empty"):
                 send_radar_email(
@@ -112,6 +110,9 @@ def run_remote_radar() -> dict:
                     subject=f"CiteMap 论文雷达 · {project_name} · {date.today().isoformat()}",
                     title=f"CiteMap 论文雷达 · {project_name}",
                 )
+                print(f"[radar] project={project_id} email=sent_empty")
+            else:
+                print(f"[radar] project={project_id} finished=no_match")
             continue
         payload = []
         for item in ranked:
@@ -121,6 +122,7 @@ def run_remote_radar() -> dict:
         enrich_with_tldr(payload)
         created = client.create_items(payload)
         new_items = created.get("new_items") or []
+        print(f"[radar] project={project_id} stored={len(payload)} new_items={len(new_items)}")
         email_items = _merge_email_items(payload, new_items) if new_items else (payload if test_mode else [])
         if email_items:
             subject_prefix = "CiteMap 论文雷达测试" if test_mode else "CiteMap 论文雷达"
@@ -132,7 +134,15 @@ def run_remote_radar() -> dict:
             if new_items:
                 client._request("POST", "/items/emailed", {"items": [{"project_id": project_id, "arxiv_id": item["arxiv_id"]} for item in new_items]})
             sent += len(email_items)
-    return {"projects": len(projects), "sent": sent, "test_mode": test_mode}
+            print(f"[radar] project={project_id} email=sent items={len(email_items)}")
+        else:
+            print(f"[radar] project={project_id} finished=email_skipped reason=no_new_items")
+    result = {"projects": len(projects), "sent": sent, "test_mode": test_mode}
+    if sent == 0:
+        print("[radar] complete sent=0；常见原因：项目未启用、未发布参考论文、没有新推荐，或候选已发送过")
+    else:
+        print(f"[radar] complete sent={sent}")
+    return result
 
 
 if __name__ == "__main__":

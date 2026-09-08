@@ -16,6 +16,21 @@ CiteMap 的论文雷达由 GitHub Actions 执行抓取、相似度排序、中�
 
 雷达按项目独立运行。每个启用雷达的项目都需要自己的 categories、reference papers、Top K 配置。Action 会读取 Worker 中全部已启用项目，逐个计算。项目有新的推荐时发送一封邮件，邮件主题包含项目名；没有 reference papers、没有候选、或推荐已发送过的项目不会发邮件。
 
+### 新建项目后如何让它发邮件
+
+1. 在 CiteMap 新建研究项目。未分类项目不能启用雷达。
+2. 在该项目中添加至少一篇参考论文，配置 categories。留空 categories 使用默认 `cs.AI`。
+3. 打开雷达开关，点击“连接并发布画像”或“重新同步并发布画像”。这一步把项目 profile、参考论文、雷达参数上传到 Worker。
+4. 在 GitHub Actions 手动运行 `CiteMap Radar`，或等待每日定时任务。
+
+Action 不读取本机 `data/papers.db`，只读取 Worker 中已发布的 profile。因此只在本地新建项目、未发布画像时，Action 不会处理该项目。
+
+### 手动 Action 没有邮件的原因
+
+手动运行与定时运行使用同一套生产逻辑。每个项目只有出现 `new_items` 才发邮件；Worker 已记录为 `emailed` 的推荐不会重复发送。Action 日志会显示 `skipped=disabled`、`skipped=no_reference_papers`、`finished=no_match`、`finished=email_skipped reason=no_new_items` 等原因。
+
+需要重复验证邮件链路时运行 `CiteMap Radar Test`。该 workflow 使用测试模式、历史候选，不受已发送去重影响，但仍要求 Worker 中存在项目 profile、邮件 Secrets 有效。
+
 ## GitHub Secrets
 
 以下 Secrets 没有默认值，需要按场景填写。
