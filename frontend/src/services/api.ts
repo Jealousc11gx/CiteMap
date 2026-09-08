@@ -50,12 +50,12 @@ export async function updateRadarMatch(matchId: string, state: RadarState, downl
   return res.json();
 }
 
-export async function syncRadar(projectId: string | undefined, remoteUrl: string, token: string, forcePublishProfile = false): Promise<{ flushed: unknown; synced: unknown; published: number; profile_forced: boolean }> {
+export async function syncRadar(projectId: string | undefined, remoteUrl: string, token: string, forcePublishProfile = false, publishProfile = true): Promise<{ flushed: unknown; synced: { applied?: number }; published: number; profile_forced: boolean }> {
   const params = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
   const res = await fetch(`${API_BASE}/radar/sync${params}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ remote_url: remoteUrl, token, publish_profile: true, force_publish_profile: forcePublishProfile }),
+    body: JSON.stringify({ remote_url: remoteUrl, token, publish_profile: publishProfile, force_publish_profile: forcePublishProfile }),
   });
   if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail?.error || "Failed to sync radar");
   return res.json();

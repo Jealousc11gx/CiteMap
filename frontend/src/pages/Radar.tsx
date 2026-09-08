@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ExternalLink, Radar as RadarIcon, RefreshCw, Save, Settings2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +30,6 @@ const EMPTY_CONFIG: Omit<RadarConfig, "project_id" | "updated_at"> = {
   debug: false,
   compute_mode: "cloud",
 };
-const AUTO_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const RADAR_CONNECTION_KEY = "citemap.radar.connection.v1";
 const RADAR_DEPLOYMENT_GUIDE_URL = "https://github.com/Jealousc11gx/CiteMap/blob/main/docs/radar-github-action-setup.md";
 
@@ -143,7 +142,6 @@ export function Radar() {
     return Boolean(connection.remoteUrl && connection.remoteToken);
   });
   const [syncing, setSyncing] = useState(false);
-  const autoSynced = useRef(new Set<string>());
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -162,26 +160,6 @@ export function Radar() {
 
   useEffect(() => { load(); }, [load]);
 
-  useEffect(() => {
-    if (!connectionSaved || !projectId || !remoteUrl.trim() || !remoteToken.trim()) return;
-    const key = `${projectId}:${remoteUrl.trim()}`;
-    if (autoSynced.current.has(key)) return;
-    const storageKey = `citemap.radar.lastAutoSync:${key}`;
-    const lastSync = Number(sessionStorage.getItem(storageKey) || 0);
-    if (Date.now() - lastSync < AUTO_SYNC_INTERVAL_MS) return;
-    autoSynced.current.add(key);
-    sessionStorage.setItem(storageKey, String(Date.now()));
-    setSyncing(true);
-    syncRadar(projectId, remoteUrl.trim(), remoteToken.trim())
-      .then(() => load())
-      .catch((err) => {
-        autoSynced.current.delete(key);
-        sessionStorage.removeItem(storageKey);
-        setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => setSyncing(false));
-  }, [connectionSaved, load, projectId, remoteToken, remoteUrl]);
-
   const filtered = useMemo(() => tab === "all" ? matches : matches.filter((match) => match.state === tab), [matches, tab]);
 
   const saveConfig = async () => {
@@ -197,9 +175,10 @@ export function Radar() {
       setConfig(updated);
       setShowSettings(false);
       if (connectionSaved && remoteUrl.trim() && remoteToken.trim()) {
-        syncRadar(projectId, remoteUrl.trim(), remoteToken.trim()).catch((err) => {
-          setError(err instanceof Error ? err.message : String(err));
-        });
+        await syncRadar(projectId, remoteUrl.trim(), remoteToken.trim(), true, true);
+        setNotice("设置已保存并发布到云端。运行 GitHub Action 完成计算，再点击“获取云端结果”。");
+      } else {
+        setNotice("设置已保存。连接 Worker 后发布项目配置，才能进行云端计算。");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -214,14 +193,17 @@ export function Radar() {
     setError(null);
     try {
       if (config.compute_mode === "cloud") {
-        if (!connectionSaved || !remoteUrl.trim() || !remoteToken.trim()) throw new Error("请先连接 Worker，再同步云端推荐");
-        await syncRadar(projectId, remoteUrl.trim(), remoteToken.trim());
+        if (!connectionSaved || !remoteUrl.trim() || !remoteToken.trim()) throw new Error("请先连接 Worker，再获取云端结果");
+        const result = await syncRadar(projectId, remoteUrl.trim(), remoteToken.trim(), false, false);
+        setNotice(`已获取云端结果，新增 ${result.synced.applied || 0} 条。`);
       } else if (config.compute_mode === "hybrid") {
         try {
           if (!connectionSaved || !remoteUrl.trim() || !remoteToken.trim()) throw new Error("未配置云端连接");
-          await syncRadar(projectId, remoteUrl.trim(), remoteToken.trim());
+          const result = await syncRadar(projectId, remoteUrl.trim(), remoteToken.trim(), false, false);
+          setNotice(`已获取云端结果，新增 ${result.synced.applied || 0} 条。`);
         } catch {
           await scanRadar(projectId);
+          setNotice("云端暂不可用，已使用本地计算。");
         }
       } else {
         await scanRadar(projectId);
@@ -244,10 +226,10 @@ export function Radar() {
     setError(null);
     setNotice(null);
     try {
-      await syncRadar(projectId, remoteUrl.trim(), remoteToken.trim(), true);
+      await syncRadar(projectId, remoteUrl.trim(), remoteToken.trim(), true, true);
       saveRadarConnection(remoteUrl.trim(), remoteToken.trim());
       setConnectionSaved(true);
-      setNotice("Worker 已连接，项目画像与云端推荐已同步。");
+      setNotice("项目配置已发布到云端。请运行 GitHub Action 完成计算，再点击“获取云端结果”。");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -281,7 +263,7 @@ export function Radar() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setShowSettings((value) => !value)}><Settings2 className="mr-2 h-4 w-4" />设置</Button>
-          <Button onClick={runScan} disabled={scanning}>{scanning ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}{config.compute_mode === "local" ? "本地扫描" : "同步云端推荐"}</Button>
+          <Button onClick={runScan} disabled={scanning}>{scanning ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}{config.compute_mode === "local" ? "运行本地扫描" : "获取云端结果"}</Button>
         </div>
       </div>
       <Dialog open={Boolean(error)} onOpenChange={(open) => { if (!open) setError(null); }}>
@@ -308,7 +290,7 @@ export function Radar() {
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
               <Button variant="outline" asChild><a href={RADAR_DEPLOYMENT_GUIDE_URL} target="_blank" rel="noreferrer">部署文档<ExternalLink className="ml-2 h-4 w-4" /></a></Button>
-              <Button onClick={runSync} disabled={syncing}>{syncing ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : null}{syncing ? "连接中" : "连接并发布画像"}</Button>
+              <Button onClick={runSync} disabled={syncing}>{syncing ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : null}{syncing ? "发布中" : "连接并发布项目"}</Button>
             </div>
           </div>
         </section>
@@ -344,7 +326,7 @@ export function Radar() {
               <label className="space-y-1.5 text-xs font-medium"><span>Worker URL</span><Input value={remoteUrl} onChange={(event) => { setRemoteUrl(event.target.value); setConnectionSaved(false); }} placeholder="https://citemap-radar.example.workers.dev" /></label>
               <label className="space-y-1.5 text-xs font-medium"><span>RADAR_TOKEN</span><Input type="password" value={remoteToken} onChange={(event) => { setRemoteToken(event.target.value); setConnectionSaved(false); }} placeholder="与 GitHub Secret 相同" /></label>
             </div>
-            <Button variant="outline" className="mt-3" onClick={runSync} disabled={syncing}>{syncing ? "连接中…" : connectionSaved ? "重新同步并发布画像" : "保存连接并发布画像"}</Button>
+            <Button variant="outline" className="mt-3" onClick={runSync} disabled={syncing}>{syncing ? "发布中…" : connectionSaved ? "重新发布项目配置" : "连接并发布项目"}</Button>
           </div>
           <Button onClick={saveConfig} disabled={savingConfig}>{savingConfig ? "保存中…" : "保存设置"}</Button>
         </section>
@@ -352,7 +334,7 @@ export function Radar() {
       <div className="flex flex-wrap gap-2 border-b pb-2">
         {(["all", "unread", "read", "saved", "dismissed"] as const).map((item) => <Button key={item} size="sm" variant={tab === item ? "default" : "ghost"} onClick={() => setTab(item)}>{item === "all" ? "全部" : item === "unread" ? "未读" : item === "read" ? "已读" : item === "saved" ? "已保存" : "已忽略"}</Button>)}
       </div>
-      {loading ? <div className="py-12 text-center text-sm text-muted-foreground">加载雷达结果…</div> : filtered.length === 0 ? <div className="rounded-xl border border-dashed p-12 text-center text-sm text-muted-foreground">暂无云端结果。先运行 GitHub Action，再点击“同步云端推荐”。</div> : <div className="grid gap-4 lg:grid-cols-2">{filtered.map((match) => <RadarCard key={match.id} match={match} onState={setState} />)}</div>}
+      {loading ? <div className="py-12 text-center text-sm text-muted-foreground">加载雷达结果…</div> : filtered.length === 0 ? <div className="rounded-xl border border-dashed p-12 text-center text-sm text-muted-foreground">暂无结果。先发布项目配置，运行 GitHub Action 完成云端计算，再点击“获取云端结果”。</div> : <div className="grid gap-4 lg:grid-cols-2">{filtered.map((match) => <RadarCard key={match.id} match={match} onState={setState} />)}</div>}
     </div>
   );
 }

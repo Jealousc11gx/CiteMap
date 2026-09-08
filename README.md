@@ -20,10 +20,11 @@ CiteMap 的论文雷达由 GitHub Actions 执行抓取、相似度排序、中�
 
 1. 在 CiteMap 新建研究项目。未分类项目不能启用雷达。
 2. 在该项目中添加至少一篇参考论文，配置 categories。留空 categories 使用默认 `cs.AI`。
-3. 打开雷达开关，点击“连接并发布画像”或“重新同步并发布画像”。这一步把项目 profile、参考论文、雷达参数上传到 Worker。
-4. 在 GitHub Actions 手动运行 `CiteMap Radar`，或等待每日定时任务。
+3. 打开雷达开关，点击“连接并发布项目”。这一步把项目 profile、参考论文、雷达参数上传到 Worker。
+4. 在 GitHub Actions 手动运行 `CiteMap Radar`，或等待每日定时任务完成云端计算。
+5. 回到 CiteMap，点击“获取云端结果”，将 Worker 中的新推荐拉回本地。
 
-Action 不读取本机 `data/papers.db`，只读取 Worker 中已发布的 profile。因此只在本地新建项目、未发布画像时，Action 不会处理该项目。
+Action 不读取本机 `data/papers.db`，只读取 Worker 中已发布的 profile。因此只在本地新建项目、未发布画像时，Action 不会处理该项目。页面中的“获取云端结果”只负责拉取结果，不会启动 GitHub Action。
 
 ### 手动 Action 没有邮件的原因
 
