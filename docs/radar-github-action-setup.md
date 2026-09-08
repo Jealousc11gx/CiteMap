@@ -139,7 +139,18 @@ CiteMap ← 推荐、AI 字段、已读/收藏/忽略状态 ← Worker + D1
 
 验证完成后，可手动运行 `CiteMap Radar`。正式 workflow 每日 UTC `22:00` 自动执行，即北京时间次日 `06:00`。
 
-## 8. CI/CD 边界
+## 8. Fork 用户的免命令行方式
+
+Fork 用户不需要在本机安装 Python、Node、uv 或 Wrangler。完成 Secrets、Variables、Cloudflare D1 配置后，直接在自己的仓库操作：
+
+1. 打开 `Actions → Deploy Radar Worker → Run workflow`，部署 Worker。
+2. 将日志中的 Worker URL 写入 `RADAR_REMOTE_URL` Secret。
+3. 打开 `Actions → CiteMap Radar Test → Run workflow`，验证抓取、排序、LLM、邮件链路。
+4. 日常运行由 `CiteMap Radar` 的定时任务自动完成；需要立即运行时点击 `Run workflow`。
+
+这套方式适合不使用命令行的用户。浏览器只负责配置和点击，计算在 GitHub-hosted runner 执行。
+
+## 9. CI/CD 边界
 
 | Workflow | 触发方式 | 职责 |
 |---|---|---|

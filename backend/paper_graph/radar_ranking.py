@@ -44,40 +44,25 @@ def rank_candidates(
     references: list[dict],
     *,
     embedding_provider: EmbeddingProvider,
-    anchor_ids: set[str] | None = None,
-    anchor_bonus: float = 0.0,
     top_k: int = 10,
-    min_score: float = 0.0,
 ) -> list[dict]:
-    """为候选写入 score、reason，并返回过滤后的 Top K。"""
+    """按 zotero-arxiv-daily 的时间衰减 cosine 算法排序。"""
     if top_k < 1:
         raise ValueError("雷达 Top K 必须大于 0")
     if not candidates or not references:
         return []
-    anchor_ids = anchor_ids or set()
-    candidate_texts = [f"{item.get('title', '')}\n{item.get('abstract', '')}".strip() for item in candidates]
-    reference_texts = [f"{item.get('title', '')}\n{item.get('abstract', '')}".strip() for item in references]
+    candidate_texts = [str(item.get("abstract", "")) for item in candidates]
+    reference_texts = [str(item.get("abstract", "")) for item in references]
     vectors = embedding_provider(candidate_texts + reference_texts)
     matrix = cosine_similarity_matrix(vectors[: len(candidates)], vectors[len(candidates) :])
     weights = time_decay_weights(len(references))
     ranked: list[dict] = []
     for index, candidate in enumerate(candidates):
-        base_score = float(matrix[index] @ weights)
-        anchor_scores = [
-            float(matrix[index, ref_index])
-            for ref_index, reference in enumerate(references)
-            if reference.get("id") in anchor_ids or reference.get("paper_id") in anchor_ids
-        ]
-        score = base_score
-        if anchor_scores and anchor_bonus:
-            score += anchor_bonus * max(anchor_scores)
+        score = float(matrix[index] @ weights) * 10.0
         item = dict(candidate)
         item["score"] = score
         item["reason"] = "项目论文语义相似度"
-        if anchor_scores and anchor_bonus:
-            item["reason"] += " + anchor paper 加权"
-        if score >= min_score:
-            ranked.append(item)
+        ranked.append(item)
     ranked.sort(key=lambda item: (-float(item["score"]), str(item.get("arxiv_id", ""))))
     return ranked[:top_k]
 
@@ -110,7 +95,6 @@ def rank_project_radar_matches(
     *,
     embedding_provider: EmbeddingProvider,
     run_id: str | None = None,
-    anchor_bonus: float = 0.0,
 ) -> list[dict]:
     """对项目候选执行算法 A，并将结果写回 radar_matches。"""
     config = get_radar_config(conn, project_id)
@@ -145,10 +129,7 @@ def rank_project_radar_matches(
         candidates,
         references,
         embedding_provider=embedding_provider,
-        anchor_ids=load_anchor_ids(conn, project_id),
-        anchor_bonus=anchor_bonus,
         top_k=config["top_k"],
-        min_score=config["min_score"],
     )
     for item in ranked:
         conn.execute(

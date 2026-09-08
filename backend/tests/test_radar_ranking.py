@@ -32,33 +32,30 @@ def test_cosine_similarity_matrix():
         cosine_similarity_matrix([[1, 0]], [[1, 0, 0]])
 
 
-def test_rank_candidates_applies_similarity_time_weight_anchor_and_top_k():
+def test_rank_candidates_matches_daily_arxiv_score_scale_and_abstract_only():
     candidates = [
-        {"arxiv_id": "b", "title": "B", "abstract": ""},
-        {"arxiv_id": "a", "title": "A", "abstract": ""},
+        {"arxiv_id": "b", "title": "B", "abstract": "B abstract"},
+        {"arxiv_id": "a", "title": "A", "abstract": "A abstract"},
     ]
     references = [
-        {"id": "recent", "title": "R", "abstract": ""},
-        {"id": "anchor", "title": "Old", "abstract": ""},
+        {"id": "recent", "title": "R", "abstract": "R abstract"},
+        {"id": "anchor", "title": "Old", "abstract": "Old abstract"},
     ]
     vectors = {
-        "B": [1, 0],
-        "A": [0, 1],
-        "R": [1, 0],
-        "Old": [0, 1],
+        "B abstract": [1, 0],
+        "A abstract": [0, 1],
+        "R abstract": [1, 0],
+        "Old abstract": [0, 1],
     }
     ranked = rank_candidates(
         candidates,
         references,
-        embedding_provider=lambda texts: [vectors[text.split("\n")[0]] for text in texts],
-        anchor_ids={"anchor"},
-        anchor_bonus=0.2,
+        embedding_provider=lambda texts: [vectors[text] for text in texts],
         top_k=1,
-        min_score=0.0,
     )
     assert len(ranked) == 1
-    assert ranked[0]["arxiv_id"] == "a"
-    assert "anchor" in ranked[0]["reason"]
+    assert ranked[0]["arxiv_id"] == "b"
+    assert np.isclose(ranked[0]["score"], time_decay_weights(2)[0] * 10.0)
 
 
 def test_rank_candidates_empty_references_returns_empty():
@@ -116,16 +113,16 @@ def test_rank_project_matches_writes_score_and_keeps_top_k(tmp_db):
     )
     conn.execute("INSERT INTO project_papers(project_id, paper_id) VALUES (?, ?)", (project["id"], "ref"))
     upsert_radar_config(conn, project["id"], enabled=True, top_k=1, min_score=0.0)
-    first = upsert_radar_candidate(conn, {"arxiv_id": "r1", "title": "Relevant"})
-    second = upsert_radar_candidate(conn, {"arxiv_id": "r2", "title": "Other"})
+    first = upsert_radar_candidate(conn, {"arxiv_id": "r1", "title": "Relevant", "abstract": "abstract"})
+    second = upsert_radar_candidate(conn, {"arxiv_id": "r2", "title": "Other", "abstract": "other"})
     upsert_radar_match(conn, project["id"], first["id"])
     upsert_radar_match(conn, project["id"], second["id"])
     conn.commit()
-    vectors = {"Relevant": [1, 0], "Other": [0, 1]}
+    vectors = {"abstract": [1, 0], "other": [0, 1], "retrieval": [1, 0]}
     ranked = rank_project_radar_matches(
         conn,
         project["id"],
-        embedding_provider=lambda texts: [vectors[text.split("\n")[0]] for text in texts],
+        embedding_provider=lambda texts: [vectors[text] for text in texts],
     )
     assert [item["arxiv_id"] for item in ranked] == ["r1"]
     assert [row["arxiv_id"] for row in conn.execute(

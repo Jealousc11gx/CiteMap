@@ -521,7 +521,6 @@ def run_radar_collection(
     *,
     fetcher=None,
     embedding_provider=None,
-    anchor_bonus: float = 0.1,
     max_results: int = 100,
 ) -> dict:
     """抓取、过滤、保存一个项目的候选；排序由 Node 3 负责。"""
@@ -573,7 +572,6 @@ def run_radar_collection(
                 project_id,
                 embedding_provider=embedding_provider,
                 run_id=run_id,
-                anchor_bonus=anchor_bonus,
             )
             if ranked and config.get("compute_mode") in {"local", "hybrid"}:
                 from .radar_llm import enrich_with_tldr

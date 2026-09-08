@@ -100,10 +100,7 @@ def run_remote_radar() -> dict:
             candidates,
             references,
             embedding_provider=get_embedding_provider(),
-            anchor_ids=set(project.get("anchor_paper_ids") or []),
-            anchor_bonus=float(project.get("anchor_bonus", 0.1)),
             top_k=top_k,
-            min_score=float(project.get("min_score", 0.0)),
         )
         if debug:
             print(f"[radar] project={project_id} ranked={len(ranked)}")
