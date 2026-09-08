@@ -1,6 +1,18 @@
-# CiteMap 论文雷达部署
+# CiteMap
 
-CiteMap 的论文雷达由 GitHub Actions 执行抓取、相似度排序、中文摘要、邮件发送。Cloudflare Worker + D1 保存项目画像、推荐结果、阅读状态。
+CiteMap 是本地优先的个人论文研究工作台。它将论文发现、整理、阅读、关联、记录集中在一个界面中。论文数据保存在本地 SQLite，论文原文与笔记保存在本地文件，论文雷达可通过 GitHub Actions 执行云端计算。
+
+## 主要功能
+
+- **论文入库**：通过 arXiv 搜索、arXiv ID、批量导入、本地 PDF 管理论文。
+- **论文解析与标注**：提取 PDF 元数据、生成摘要、识别核心贡献、方法、结果、局限性、作者与机构信息。
+- **研究项目**：按研究方向建立项目，将论文加入不同项目，分别维护研究范围与参考论文。
+- **知识图谱**：基于论文引用关系、作者、机构、团队生成团队视图与论文视图，支持节点拖拽、缩放、筛选、论文入口高亮。
+- **论文雷达**：以项目参考论文为画像，从 arXiv 抓取候选论文，按相似度排序，支持关键词过滤、分类配置、中文摘要、邮件推荐。
+- **笔记管理**：为论文创建 Markdown 笔记，支持 frontmatter、目录浏览、编辑与保存。
+- **智能聊天**：围绕论文、项目、笔记调用工具查询本地知识库，支持流式对话。
+
+论文雷达由 GitHub Actions 执行抓取、相似度排序、中文摘要、邮件发送。Cloudflare Worker + D1 保存项目画像、推荐结果、阅读状态。
 
 ## 部署流程
 
@@ -12,25 +24,9 @@ CiteMap 的论文雷达由 GitHub Actions 执行抓取、相似度排序、中�
 6. 运行 `Actions → CiteMap Radar Test → Run workflow` 验证。
 7. 正式 workflow `CiteMap Radar` 默认每天 UTC `22:00` 运行。可在 Actions 页面手动 `Run workflow`。
 
-配置完成后，在 CiteMap 雷达页填写 Worker URL、RADAR_TOKEN，点击“连接并发布画像”。再在“设置”中配置当前项目的 arXiv categories、关键词、Top K、抓取上限、计算模式。
+配置完成后，在 CiteMap 雷达页填写 Worker URL、RADAR_TOKEN，点击“连接并发布项目”。再在“设置”中配置当前项目的 arXiv categories、关键词、Top K、抓取上限、计算模式。
 
 雷达按项目独立运行。每个启用雷达的项目都需要自己的 categories、reference papers、Top K 配置。Action 会读取 Worker 中全部已启用项目，逐个计算。项目有新的推荐时发送一封邮件，邮件主题包含项目名；没有 reference papers、没有候选、或推荐已发送过的项目不会发邮件。
-
-### 新建项目后如何让它发邮件
-
-1. 在 CiteMap 新建研究项目。未分类项目不能启用雷达。
-2. 在该项目中添加至少一篇参考论文，配置 categories。留空 categories 使用默认 `cs.AI`。
-3. 打开雷达开关，点击“连接并发布项目”。这一步把项目 profile、参考论文、雷达参数上传到 Worker。
-4. 在 GitHub Actions 手动运行 `CiteMap Radar`，或等待每日定时任务完成云端计算。
-5. 回到 CiteMap，点击“获取云端结果”，将 Worker 中的新推荐拉回本地。
-
-Action 不读取本机 `data/papers.db`，只读取 Worker 中已发布的 profile。因此只在本地新建项目、未发布画像时，Action 不会处理该项目。页面中的“获取云端结果”只负责拉取结果，不会启动 GitHub Action。
-
-### 手动 Action 没有邮件的原因
-
-手动运行与定时运行使用同一套生产逻辑。每个项目只有出现 `new_items` 才发邮件；Worker 已记录为 `emailed` 的推荐不会重复发送。Action 日志会显示 `skipped=disabled`、`skipped=no_reference_papers`、`finished=no_match`、`finished=email_skipped reason=no_new_items` 等原因。
-
-需要重复验证邮件链路时运行 `CiteMap Radar Test`。该 workflow 使用测试模式、历史候选，不受已发送去重影响，但仍要求 Worker 中存在项目 profile、邮件 Secrets 有效。
 
 ## GitHub Secrets
 
