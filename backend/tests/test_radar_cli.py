@@ -52,7 +52,7 @@ def test_radar_test_uses_historical_candidate_and_repeats_email(monkeypatch):
         lambda candidates, *args, **kwargs: [{**candidates[0], "score": 0.5, "reason": "test"}],
     )
     monkeypatch.setattr(radar_cli, "enrich_with_tldr", lambda items: items)
-    monkeypatch.setattr(radar_cli, "send_radar_email", lambda items, subject: sent.append((items, subject)))
+    monkeypatch.setattr(radar_cli, "send_radar_email", lambda items, subject, **kwargs: sent.append((items, subject)))
 
     result = radar_cli.run_remote_radar()
 

@@ -14,6 +14,8 @@ CiteMap 的论文雷达由 GitHub Actions 执行抓取、相似度排序、中�
 
 配置完成后，在 CiteMap 雷达页填写 Worker URL、RADAR_TOKEN，点击“连接并发布画像”。再在“设置”中配置当前项目的 arXiv categories、关键词、Top K、抓取上限、计算模式。
 
+雷达按项目独立运行。每个启用雷达的项目都需要自己的 categories、reference papers、Top K 配置。Action 会读取 Worker 中全部已启用项目，逐个计算。项目有新的推荐时发送一封邮件，邮件主题包含项目名；没有 reference papers、没有候选、或推荐已发送过的项目不会发邮件。
+
 ## GitHub Secrets
 
 以下 Secrets 没有默认值，需要按场景填写。

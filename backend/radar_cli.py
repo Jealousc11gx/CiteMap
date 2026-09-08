@@ -76,6 +76,7 @@ def run_remote_radar() -> dict:
         if not project.get("enabled", False):
             continue
         project_id = project["project_id"]
+        project_name = str(project.get("project_name") or project_id)
         fetch_limit = int(project.get("fetch_limit", 100))
         top_k = int(project.get("top_k", 10))
         if test_mode:
@@ -106,11 +107,16 @@ def run_remote_radar() -> dict:
             print(f"[radar] project={project_id} ranked={len(ranked)}")
         if not ranked:
             if project.get("send_empty"):
-                send_radar_email([], subject=f"CiteMap 论文雷达 {date.today().isoformat()}")
+                send_radar_email(
+                    [],
+                    subject=f"CiteMap 论文雷达 · {project_name} · {date.today().isoformat()}",
+                    title=f"CiteMap 论文雷达 · {project_name}",
+                )
             continue
         payload = []
         for item in ranked:
             item["project_id"] = project_id
+            item["project_name"] = project_name
             payload.append(item)
         enrich_with_tldr(payload)
         created = client.create_items(payload)
@@ -118,7 +124,11 @@ def run_remote_radar() -> dict:
         email_items = _merge_email_items(payload, new_items) if new_items else (payload if test_mode else [])
         if email_items:
             subject_prefix = "CiteMap 论文雷达测试" if test_mode else "CiteMap 论文雷达"
-            send_radar_email(email_items, subject=f"{subject_prefix} {date.today().isoformat()}")
+            send_radar_email(
+                email_items,
+                subject=f"{subject_prefix} · {project_name} · {date.today().isoformat()}",
+                title=f"{subject_prefix} · {project_name}",
+            )
             if new_items:
                 client._request("POST", "/items/emailed", {"items": [{"project_id": project_id, "arxiv_id": item["arxiv_id"]} for item in new_items]})
             sent += len(email_items)

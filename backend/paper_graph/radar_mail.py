@@ -53,7 +53,7 @@ def render_radar_email(items: list[dict], *, title: str = "CiteMap 论文雷达"
     return f"<html><body><h1>{html.escape(title)}</h1>{content}</body></html>"
 
 
-def send_radar_email(items: list[dict], *, subject: str = "CiteMap 论文雷达") -> None:
+def send_radar_email(items: list[dict], *, subject: str = "CiteMap 论文雷达", title: str | None = None) -> None:
     sender = os.environ.get("RADAR_EMAIL_SENDER", "").strip()
     receiver = os.environ.get("RADAR_EMAIL_RECEIVER", "").strip()
     password = os.environ.get("RADAR_EMAIL_PASSWORD", "").strip()
@@ -62,7 +62,7 @@ def send_radar_email(items: list[dict], *, subject: str = "CiteMap 论文雷达"
     if not all((sender, receiver, password, host)):
         raise RuntimeError("未配置完整的 RADAR_EMAIL_SENDER / RADAR_EMAIL_RECEIVER / RADAR_EMAIL_PASSWORD / RADAR_SMTP_HOST")
 
-    msg = MIMEText(render_radar_email(items), "html", "utf-8")
+    msg = MIMEText(render_radar_email(items, title=title or "CiteMap 论文雷达"), "html", "utf-8")
     name, address = parseaddr(sender)
     msg["From"] = formataddr((Header(name or "CiteMap Radar", "utf-8").encode(), address))
     msg["To"] = receiver
