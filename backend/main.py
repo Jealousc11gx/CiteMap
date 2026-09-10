@@ -46,6 +46,7 @@ from paper_graph.radar import (
 )
 from paper_graph.radar_embeddings import get_embedding_provider
 from paper_graph.radar_sync import RadarRemoteClient, flush_pending_operations, sync_remote_changes
+from paper_graph.radar_connection import get_radar_connection, load_radar_credentials, save_radar_connection
 from paper_graph.ingest import ingest_local_pdf, ingest_arxiv_id, search_arxiv, search_arxiv_only, _download_arxiv_pdf
 from paper_graph.annotate import annotate_paper, annotate_all, get_default_model, get_client, AnnotationError
 from paper_graph.graph import build_paper_graph, build_team_ego_graph, build_team_graph
@@ -178,10 +179,15 @@ class RadarStateRequest(BaseModel):
 
 
 class RadarSyncRequest(BaseModel):
-    remote_url: str
-    token: str
+    remote_url: Optional[str] = None
+    token: Optional[str] = None
     publish_profile: bool = True
     force_publish_profile: bool = False
+
+
+class RadarConnectionRequest(BaseModel):
+    remote_url: str
+    token: Optional[str] = None
 
 
 class ChatMessageResponse(BaseModel):
@@ -333,6 +339,27 @@ def api_remove_paper_from_project(project_id: str, paper_id: str):
 # 论文雷达 API
 # ──────────────────────────────
 
+@app.get("/api/radar/connection")
+def api_get_radar_connection():
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        return get_radar_connection(conn)
+    finally:
+        conn.close()
+
+
+@app.put("/api/radar/connection")
+def api_update_radar_connection(req: RadarConnectionRequest):
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        return save_radar_connection(conn, req.remote_url, req.token)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        conn.close()
+
 @app.get("/api/radar/config")
 def api_get_radar_config(project_id: str):
     _require_project(project_id)
@@ -461,7 +488,10 @@ def api_sync_radar(req: RadarSyncRequest, project_id: Optional[str] = None):
     init_db(DB_PATH)
     conn = get_connection(DB_PATH)
     try:
-        client = RadarRemoteClient(req.remote_url, req.token)
+        if req.remote_url:
+            save_radar_connection(conn, req.remote_url, req.token)
+        remote_url, token = load_radar_credentials(conn)
+        client = RadarRemoteClient(remote_url, token)
         flushed = flush_pending_operations(conn, client)
         synced = sync_remote_changes(conn, client)
         published = 0
@@ -509,6 +539,8 @@ def api_sync_radar(req: RadarSyncRequest, project_id: Optional[str] = None):
             "published": published,
             "profile_forced": req.force_publish_profile,
         }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail={"code": "RADAR_SYNC_FAILED", "error": str(exc)})
     finally:

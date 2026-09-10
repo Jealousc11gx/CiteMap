@@ -365,6 +365,16 @@ def init_db(db_path: Optional[Path] = None) -> None:
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_radar_pending_project ON radar_pending_operations(project_id)")
 
+    # Worker 连接为本机全局配置，不随项目删除；token 不通过读取 API 返回。
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS radar_connection (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            remote_url TEXT NOT NULL,
+            token TEXT NOT NULL,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     # 聊天会话与消息历史
     cur.execute("""
         CREATE TABLE IF NOT EXISTS chat_sessions (

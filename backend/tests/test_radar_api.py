@@ -110,6 +110,54 @@ def test_radar_sync_api_returns_structured_error(project_client):
     assert response.json()["detail"]["code"] == "RADAR_SYNC_FAILED"
 
 
+def test_radar_connection_api_persists_and_masks_token(project_client):
+    saved = project_client.put(
+        "/api/radar/connection",
+        json={"remote_url": "https://radar.example.workers.dev/sync", "token": "secret"},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["remote_url"] == "https://radar.example.workers.dev"
+    assert saved.json()["token_configured"] is True
+    assert "token" not in saved.json()
+
+    loaded = project_client.get("/api/radar/connection")
+    assert loaded.status_code == 200
+    assert loaded.json()["remote_url"] == "https://radar.example.workers.dev"
+    assert "secret" not in loaded.text
+
+
+def test_radar_sync_uses_persisted_connection(project_client, monkeypatch):
+    import main
+
+    created = project_client.post("/api/projects", json={"name": "Persisted sync"})
+    project_id = created.json()["id"]
+    project_client.put(
+        "/api/radar/connection",
+        json={"remote_url": "https://radar.example", "token": "stored-secret"},
+    )
+    credentials = []
+
+    class FakeClient:
+        def __init__(self, base_url, token):
+            self.base_url = base_url
+            credentials.append((base_url, token))
+
+        def publish_profile(self, current_project_id, profile):
+            return {"ok": True}
+
+    monkeypatch.setattr(main, "RadarRemoteClient", FakeClient)
+    monkeypatch.setattr(main, "flush_pending_operations", lambda conn, client: {"sent": 0, "failed": 0})
+    monkeypatch.setattr(main, "sync_remote_changes", lambda conn, client: {"applied": 0, "pages": 1, "cursor": "0"})
+
+    response = project_client.post(
+        "/api/radar/sync",
+        params={"project_id": project_id},
+        json={"publish_profile": False},
+    )
+    assert response.status_code == 200
+    assert credentials == [("https://radar.example", "stored-secret")]
+
+
 def test_radar_sync_only_publishes_changed_profile_unless_forced(project_client, monkeypatch):
     import main
 
