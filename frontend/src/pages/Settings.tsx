@@ -372,7 +372,7 @@ export function Settings() {
               <Section title="来源">
                 <ToggleField label="arXiv" checked={isChecked("EXPLORE_ARXIV_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_ARXIV_ENABLED", checked)} />
                 <ToggleField label="Hugging Face 日榜" hint="采集当天在 Hugging Face 出现的论文。" checked={isChecked("EXPLORE_HF_DAILY_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_HF_DAILY_ENABLED", checked)} />
-                <ToggleField label="关注作者" hint="采集这些作者在时间范围内的新论文。" checked={isChecked("EXPLORE_WATCHED_AUTHORS_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_WATCHED_AUTHORS_ENABLED", checked)} />
+                <ToggleField label="订阅关注作者更新" hint="这些作者的新论文会单独出现在探索首页，不受主题精选数量上限影响。" checked={isChecked("EXPLORE_WATCHED_AUTHORS_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_WATCHED_AUTHORS_ENABLED", checked)} />
                 <ToggleField label="OpenReview" checked={isChecked("EXPLORE_OPENREVIEW_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_OPENREVIEW_ENABLED", checked)} />
                 <Field label="关注作者时间范围（天）" hint="抓取目标日前 N 天内这些作者提交的新论文；默认 7 天。"><Input type="number" min="1" max="365" value={value("EXPLORE_WATCHED_AUTHORS_WINDOW_DAYS")} onChange={(event) => setValue("EXPLORE_WATCHED_AUTHORS_WINDOW_DAYS", event.target.value)} /></Field>
                 <Field label="关注作者名单" hint="一行一个；可写成“姓名 | 机构”。点击输入框展开编辑。"><ExpandableTextarea rows={6} value={value("EXPLORE_WATCHED_AUTHORS").replaceAll(",", "\n")} onChange={(event) => setValue("EXPLORE_WATCHED_AUTHORS", splitValues(event.target.value).join(","))} placeholder="姓名 | 机构" /></Field>

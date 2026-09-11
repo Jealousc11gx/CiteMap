@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ArrowUpRight,
+  BarChart3,
   BookOpen,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   Compass,
   ExternalLink,
-  GitBranch,
   Loader2,
   RefreshCw,
   Search,
   Sparkles,
+  UserRound,
   X,
 } from "lucide-react";
 import { useProject } from "@/contexts/ProjectContext";
@@ -34,7 +37,7 @@ import {
 } from "@/services/api";
 import type { ExploreCandidate, ExploreDigest, ExploreProfile, ExploreTriageStatus, ExploreTrends } from "@/types";
 
-type ExploreTab = "digest" | "pool" | "trend";
+type ExploreTab = "digest" | "pool";
 type SourceFilter = "all" | string;
 type TopicFilter = "all" | string;
 type TriageFilter = "all" | ExploreTriageStatus;
@@ -47,7 +50,7 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 const TRIAGE_LABELS: Record<ExploreTriageStatus, string> = {
-  unreviewed: "待处理",
+  unreviewed: "未整理",
   read: "已读",
   later: "稍后处理",
   ignored: "已忽略",
@@ -162,84 +165,121 @@ function CandidateRow({ candidate, busy, onOpen, onTriage }: {
   );
 }
 
-function DigestView({ digest, onOpen, onGoPool }: { digest: ExploreDigest | null; onOpen: (candidate: ExploreCandidate) => void; onGoPool: () => void }) {
-  if (!digest) return <EmptyState title="还没有今日推荐" description="先采集新论文，再完成相关性判断。系统会把值得优先阅读的结果放在这里。" />;
-  const topics = Object.entries(digest.topic_counts).slice(0, 5);
-  const sources = Object.entries(digest.source_counts).sort((a, b) => b[1] - a[1]);
-  const crossSourceCount = digest.spotlight.filter((candidate) => candidate.sources.length > 1).length;
+function Metric({ label, value, emphasized = false }: { label: string; value: number; emphasized?: boolean }) {
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
-      <Card>
-        <CardHeader className="border-b">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-xl"><BookOpen className="h-5 w-5 text-primary" />今天值得先看什么</CardTitle>
-              <CardDescription className="mt-2">{digest.digest_date} · 从已采集论文中筛出的少量推荐</CardDescription>
-            </div>
-            <Badge variant="outline">今日推荐</Badge>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <p className="max-w-3xl text-[15px] leading-7">{digest.summary}</p>
-          <div className="mt-6 border-t border-border/70 pt-5">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold">推荐论文</h2>
-              <Button variant="ghost" size="sm" onClick={onGoPool}>查看待筛论文 <ArrowUpRight className="ml-1 h-3.5 w-3.5" /></Button>
-            </div>
-            <div className="mt-1">
-              {digest.spotlight.length
-                ? digest.spotlight.map((candidate) => <SpotlightRow key={candidate.id} candidate={candidate} onOpen={onOpen} />)
-                : <p className="py-8 text-sm text-muted-foreground">论文已采集，完成相关性判断后才会进入今日推荐。</p>}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <div className="space-y-5">
-        <Card>
-          <CardHeader><CardTitle className="text-base">主题分布</CardTitle><CardDescription>今天推荐论文按研究方向分布</CardDescription></CardHeader>
-          <CardContent className="space-y-4">
-            {topics.length ? topics.map(([topic, count]) => (
-              <div key={topic}>
-                <div className="flex justify-between text-sm"><span>{topic}</span><span className="text-muted-foreground">{count}</span></div>
-                <div className="mt-2 h-1.5 rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(12, (count / topics[0][1]) * 100)}%` }} /></div>
-              </div>
-            )) : <p className="text-sm text-muted-foreground">暂无主题数据</p>}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-base">来源分布</CardTitle><CardDescription>同一论文来自多个来源时合并显示</CardDescription></CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {sources.map(([source, count]) => <div key={source} className="flex items-center justify-between text-sm"><span>{sourceLabel(source)}</span><span className="text-muted-foreground">{count} 篇</span></div>)}
-            </div>
-            <div className="mt-5 flex items-center gap-2 border-t border-border/70 pt-4 text-sm text-muted-foreground"><GitBranch className="h-4 w-4" />推荐论文中 {crossSourceCount} 篇来自多个来源</div>
-          </CardContent>
-        </Card>
-      </div>
+    <div className="min-w-0 py-3">
+      <p className={`font-mono text-xl font-semibold tabular-nums ${emphasized ? "text-primary" : "text-foreground"}`}>{value}</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
     </div>
   );
 }
 
-function TrendView({ trends }: { trends: ExploreTrends | null }) {
-  if (!trends) return <EmptyState title="还没有主题趋势" description="积累几天采集结果后，这里会显示各研究方向的论文数量变化。" />;
-  const topics = Object.entries(trends.topics).sort((a, b) => b[1] - a[1]);
-  const days = Object.entries(trends.series).sort(([a], [b]) => a.localeCompare(b));
-  const maxDay = Math.max(1, ...days.map(([, values]) => Object.values(values).reduce((sum, value) => sum + value, 0)));
+function TodayDistribution({ digest }: { digest: ExploreDigest }) {
+  const topics = Object.entries(digest.topic_counts).sort((a, b) => b[1] - a[1]);
+  const sources = Object.entries(digest.source_counts).sort((a, b) => b[1] - a[1]);
+  const hasSelection = digest.highlighted_count > 0;
+  const [open, setOpen] = useState(hasSelection);
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+    <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="group rounded-lg border bg-card">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <span>今日统计</span>
+        <span className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
+          {hasSelection ? `${digest.highlighted_count} 篇精选` : "暂无精选"}
+          <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+        </span>
+      </summary>
+      <div className="space-y-5 border-t px-4 py-4">
+        <div>
+          <p className="text-xs font-medium">精选主题</p>
+          {topics.length ? <div className="mt-3 space-y-3">{topics.map(([topic, count]) => (
+            <div key={topic} className="flex items-center justify-between text-sm"><span>{topic}</span><span className="tabular-nums text-muted-foreground">{count} 篇</span></div>
+          ))}</div> : <p className="mt-2 text-sm text-muted-foreground">无</p>}
+        </div>
+        <div className="border-t pt-4">
+          <p className="text-xs font-medium">采集来源</p>
+          {sources.length ? <div className="mt-3 space-y-3">{sources.map(([source, count]) => (
+            <div key={source} className="flex items-center justify-between text-sm"><span>{sourceLabel(source)}</span><span className="tabular-nums text-muted-foreground">{count} 篇</span></div>
+          ))}</div> : <p className="mt-2 text-sm text-muted-foreground">无</p>}
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function TrendSummary({ trends }: { trends: ExploreTrends | null }) {
+  const topics = Object.entries(trends?.topics || {}).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const max = Math.max(1, ...topics.map(([, count]) => count));
+  return (
+    <section className="rounded-lg border bg-card px-4 py-4">
+      <div className="flex items-center gap-2">
+        <BarChart3 className="h-4 w-4 text-primary" />
+        <h2 className="text-sm font-semibold">近 {trends?.days || 30} 日主题</h2>
+      </div>
+      {topics.length ? <div className="mt-4 space-y-3">{topics.map(([topic, count]) => (
+        <div key={topic}>
+          <div className="flex items-center justify-between gap-3 text-xs"><span className="truncate">{topic}</span><span className="tabular-nums text-muted-foreground">{count}</span></div>
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary/75" style={{ width: `${Math.max(8, (count / max) * 100)}%` }} /></div>
+        </div>
+      ))}</div> : <p className="mt-3 text-sm text-muted-foreground">暂无历史数据</p>}
+    </section>
+  );
+}
+
+function DigestView({ digest, trends, onOpen, onGoPool, onManageAuthors }: {
+  digest: ExploreDigest | null;
+  trends: ExploreTrends | null;
+  onOpen: (candidate: ExploreCandidate) => void;
+  onGoPool: () => void;
+  onManageAuthors: () => void;
+}) {
+  if (!digest) return <EmptyState title="还没有今日数据" description="采集新论文后，这里会生成当天的论文速览。" />;
+  const selected = digest.buckets.flatMap((bucket) => bucket.papers);
+  return (
+    <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
       <Card>
-        <CardHeader><CardTitle>每日论文数量</CardTitle><CardDescription>近 {trends.days} 天各研究方向出现的次数，不代表论文质量或推荐优先级</CardDescription></CardHeader>
-        <CardContent>
-          {days.length ? <div className="space-y-3">{days.map(([day, values]) => {
-            const total = Object.values(values).reduce((sum, value) => sum + value, 0);
-            return <div key={day} className="flex items-center gap-3 text-sm"><span className="w-24 shrink-0 text-muted-foreground">{day}</span><div className="h-7 flex-1 rounded bg-muted"><div className="flex h-full items-center rounded bg-primary/80 px-2 text-xs text-primary-foreground" style={{ width: `${Math.max(8, (total / maxDay) * 100)}%` }}>{total} 篇</div></div></div>;
-          })}</div> : <p className="text-sm text-muted-foreground">暂无趋势数据</p>}
+        <CardHeader className="border-b">
+          <CardTitle className="flex items-center gap-2 text-xl"><BookOpen className="h-5 w-5 text-primary" />{digest.digest_date}</CardTitle>
+          <CardDescription>每日论文速览</CardDescription>
+        </CardHeader>
+        <CardContent className="divide-y px-5 py-0 sm:px-6">
+          <section className="py-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2"><UserRound className="h-4 w-4 text-primary" /><h2 className="font-semibold">关注作者更新</h2><Badge variant="outline" className="font-normal">{digest.watched_count}</Badge></div>
+              <Button variant="ghost" size="sm" onClick={onManageAuthors}>管理关注作者</Button>
+            </div>
+            <div className="mt-1">
+              {digest.watched.length
+                ? digest.watched.map((candidate) => <SpotlightRow key={candidate.id} candidate={candidate} onOpen={onOpen} />)
+                : <p className="py-5 text-sm text-muted-foreground">今天没有关注作者更新。</p>}
+            </div>
+          </section>
+          <section className="py-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /><h2 className="font-semibold">主题精选</h2><Badge variant="outline" className="font-normal">{digest.highlighted_count}</Badge></div>
+              <Button variant="ghost" size="sm" onClick={onGoPool}>查看候选论文 <ArrowUpRight className="ml-1 h-3.5 w-3.5" /></Button>
+            </div>
+            <div className="mt-1">
+              {selected.length
+                ? selected.map((candidate) => <SpotlightRow key={candidate.id} candidate={candidate} onOpen={onOpen} />)
+                : <p className="py-5 text-sm text-muted-foreground">今天没有通过筛选的主题论文。</p>}
+            </div>
+          </section>
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader><CardTitle className="text-base">主题累计</CardTitle><CardDescription>用于观察哪些研究方向正在变多</CardDescription></CardHeader>
-        <CardContent className="space-y-3">{topics.map(([topic, count], index) => <div key={topic} className="flex items-center justify-between text-sm"><span><span className="mr-2 text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>{topic}</span><span className="font-medium">{count}</span></div>)}</CardContent>
-      </Card>
+      <aside className="space-y-4 xl:sticky xl:top-6">
+        <section className="rounded-lg border bg-card px-4 py-4">
+          <div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">今日进度</h2><span className="text-xs text-muted-foreground">{digest.digest_date}</span></div>
+          <div className="mt-2 grid grid-cols-2 divide-x border-y [&>*:nth-child(even)]:pl-4 [&>*:nth-child(n+3)]:border-t">
+            <Metric label="已采集" value={digest.scanned_count} />
+            <Metric label="待判断" value={digest.pending_count} emphasized={digest.pending_count > 0} />
+            <Metric label="主题精选" value={digest.highlighted_count} />
+            <Metric label="作者更新" value={digest.watched_count} />
+          </div>
+          {digest.pending_count > 0 && <Button variant="ghost" size="sm" className="mt-2 w-full justify-between px-0" onClick={onGoPool}>处理待判断论文 <ArrowUpRight className="h-3.5 w-3.5" /></Button>}
+        </section>
+        <TrendSummary trends={trends} />
+        <TodayDistribution key={`${digest.digest_date}-${digest.highlighted_count > 0}`} digest={digest} />
+      </aside>
     </div>
   );
 }
@@ -250,6 +290,7 @@ function EmptyState({ title, description }: { title: string; description: string
 
 export function Explore() {
   const { activeProject } = useProject();
+  const navigate = useNavigate();
   const [tab, setTab] = useState<ExploreTab>("digest");
   const [profile, setProfile] = useState<ExploreProfile | null>(null);
   const [digest, setDigest] = useState<ExploreDigest | null>(null);
@@ -307,7 +348,7 @@ export function Explore() {
     try {
       await scanExplore(profile?.id || "explore_default");
       await load(false);
-      setNotice("采集完成，候选池已更新");
+      setNotice("采集完成，候选论文已更新");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -367,15 +408,16 @@ export function Explore() {
       <div className="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="workspace-heading flex items-center gap-2"><Compass className="h-5 w-5 text-primary" />探索</h1>
-          <p className="workspace-description mt-1">发现值得关注的新论文，确认后再加入研究项目。</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2"><Badge variant="secondary">{profile?.name || "探索主题"}</Badge>{profile?.categories.map((category) => <Badge key={category} variant="outline" className="font-normal">{category}</Badge>)}</div>
+          <p className="workspace-description mt-1">
+            {profile?.name ? `围绕“${profile.name}”发现值得关注的新论文，确认后再加入研究项目。` : "发现值得关注的新论文，确认后再加入研究项目。"}
+          </p>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <Button variant="outline" onClick={handleScan} disabled={syncing || analyzing} className="min-w-0">
             <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />{syncing ? "采集中" : "采集新论文"}
           </Button>
           <Button onClick={handleAnalyzePending} disabled={syncing || analyzing} className="min-w-0">
-            {analyzing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{analyzing ? "分析中" : "分析待处理"}
+            {analyzing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{analyzing ? "分析中" : "判断新论文"}
           </Button>
         </div>
       </div>
@@ -383,18 +425,15 @@ export function Explore() {
       {error && <ErrorAlert message={error} onRetry={() => void load()} />}
       {notice && <div className="flex items-center gap-2 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300" role="status"><CheckCircle2 className="h-4 w-4" />{notice}<button className="ml-auto rounded p-1 hover:bg-emerald-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setNotice(null)} aria-label="关闭提示"><X className="h-3.5 w-3.5" /></button></div>}
 
-      <p className="text-sm text-muted-foreground"><span className="font-medium text-foreground">工作流程：</span>采集来源 → 判断相关性 → 生成今日推荐 → 加入研究项目</p>
-
       <Tabs value={tab} onValueChange={(value) => setTab(value as ExploreTab)}>
-        <TabsList className="w-full sm:w-fit"><TabsTrigger value="digest">今日推荐</TabsTrigger><TabsTrigger value="pool">待筛论文</TabsTrigger><TabsTrigger value="trend">主题趋势</TabsTrigger></TabsList>
-        <TabsContent value="digest" className="mt-5">{loading ? <LoadingState /> : <DigestView digest={digest} onOpen={setSelected} onGoPool={() => setTab("pool")} />}</TabsContent>
+        <TabsList className="w-full sm:w-fit"><TabsTrigger value="digest">今日</TabsTrigger><TabsTrigger value="pool">候选论文</TabsTrigger></TabsList>
+        <TabsContent value="digest" className="mt-5">{loading ? <LoadingState /> : <DigestView digest={digest} trends={trends} onOpen={setSelected} onGoPool={() => setTab("pool")} onManageAuthors={() => navigate("/settings?tab=explore")} />}</TabsContent>
         <TabsContent value="pool" className="mt-5">
           <Card>
-            <CardHeader className="border-b pb-5"><div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div><CardTitle>待筛论文</CardTitle><CardDescription className="mt-1">{loading ? "正在更新" : `各来源采集到、尚未整理的论文 · ${candidates.length} 篇`}</CardDescription></div><div className="flex flex-wrap items-center gap-2"><FilterSelect label="来源" value={source} onChange={(value) => setSource(value)} options={[{ value: "all", label: "全部来源" }, ...sources.map((item) => ({ value: item, label: sourceLabel(item) }))]} /><FilterSelect label="主题" value={topic} onChange={(value) => setTopic(value)} options={[{ value: "all", label: "全部主题" }, ...topics.map((item) => ({ value: item, label: item }))]} /><FilterSelect label="状态" value={triage} onChange={(value) => setTriage(value as TriageFilter)} options={[{ value: "all", label: "全部状态" }, ...Object.entries(TRIAGE_LABELS).map(([value, label]) => ({ value, label }))]} /></div></div><div className="relative max-w-md"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题或摘要" className="pl-9" /></div></CardHeader>
-            <CardContent className="pt-1">{loading ? <LoadingState /> : candidates.length ? candidates.map((candidate) => <CandidateRow key={candidate.id} candidate={candidate} busy={busyId === candidate.id} onOpen={setSelected} onTriage={(item, status) => void handleTriage(item, status)} />) : <EmptyState title="没有待筛论文" description="调整筛选条件，或采集一次新论文。" />}</CardContent>
+            <CardHeader className="border-b pb-5"><div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div><CardTitle>候选论文</CardTitle><CardDescription className="mt-1">{loading ? "正在更新" : `当前筛选下 ${candidates.length} 篇`}</CardDescription></div><div className="flex flex-wrap items-center gap-2"><FilterSelect label="来源" value={source} onChange={(value) => setSource(value)} options={[{ value: "all", label: "全部来源" }, ...sources.map((item) => ({ value: item, label: sourceLabel(item) }))]} /><FilterSelect label="主题" value={topic} onChange={(value) => setTopic(value)} options={[{ value: "all", label: "全部主题" }, ...topics.map((item) => ({ value: item, label: item }))]} /><FilterSelect label="状态" value={triage} onChange={(value) => setTriage(value as TriageFilter)} options={[{ value: "all", label: "全部状态" }, ...Object.entries(TRIAGE_LABELS).map(([value, label]) => ({ value, label }))]} /></div></div><div className="relative max-w-md"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题或摘要" className="pl-9" /></div></CardHeader>
+            <CardContent className="pt-1">{loading ? <LoadingState /> : candidates.length ? candidates.map((candidate) => <CandidateRow key={candidate.id} candidate={candidate} busy={busyId === candidate.id} onOpen={setSelected} onTriage={(item, status) => void handleTriage(item, status)} />) : <EmptyState title="没有候选论文" description="调整筛选条件，或采集一次新论文。" />}</CardContent>
           </Card>
         </TabsContent>
-        <TabsContent value="trend" className="mt-5">{loading ? <LoadingState /> : <TrendView trends={trends} />}</TabsContent>
       </Tabs>
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>

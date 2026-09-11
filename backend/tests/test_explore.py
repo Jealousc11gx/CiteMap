@@ -111,6 +111,12 @@ def test_scan_analyze_digest_and_triage_are_project_independent(tmp_db):
     digest = get_explore_digest(conn, digest_date=date.today().isoformat())
     assert digest["spotlight"][0]["id"] == quantized["id"]
     assert digest["topic_counts"] == {"ptq": 1}
+    assert digest["scanned_count"] == 2
+    assert digest["pending_count"] == 1
+    assert digest["judged_count"] == 1
+    assert digest["rejected_count"] == 0
+    assert digest["highlighted_count"] == 1
+    assert digest["watched_count"] == 0
     assert get_explore_trends(conn, days=7)["topics"]["ptq"] == 1
     rollup = get_explore_rollup(
         conn,
@@ -121,6 +127,25 @@ def test_scan_analyze_digest_and_triage_are_project_independent(tmp_db):
     assert rollup["buckets"][0]["id"] == "ptq"
     updated = transition_explore_triage(conn, "explore_default", quantized["id"], "later")
     assert updated["triage_status"] == "later"
+    conn.close()
+
+
+def test_watched_authors_are_a_separate_subscription_lane(tmp_db):
+    conn = get_connection(tmp_db)
+    watched = _candidate("2609.10009", "Watched author update")
+    scan_explore(
+        conn,
+        source_fetchers={"arxiv_authors": lambda: [watched]},
+        target_date=date.today(),
+    )
+
+    digest = get_explore_digest(conn, digest_date=date.today().isoformat())
+
+    assert digest["pending_count"] == 1
+    assert digest["highlighted_count"] == 0
+    assert digest["watched_count"] == 1
+    assert digest["watched"][0]["arxiv_id"] == "2609.10009"
+    assert digest["spotlight"][0]["watched_author"] is True
     conn.close()
 
 

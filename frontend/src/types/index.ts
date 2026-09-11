@@ -285,8 +285,12 @@ export interface ExploreDigest {
   period: string;
   summary: string;
   scanned_count: number;
+  pending_count: number;
+  judged_count: number;
+  rejected_count: number;
   surviving_count: number;
   highlighted_count: number;
+  watched_count: number;
   watched: ExploreCandidate[];
   buckets: ExploreDigestBucket[];
   topic_counts: Record<string, number>;

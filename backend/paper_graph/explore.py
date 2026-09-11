@@ -902,11 +902,12 @@ def get_explore_digest(
         [item for item in surviving if item["id"] not in watched_ids],
         TOPIC_CAPS,
     )
-    spotlight = watched + [
+    selected = [
         item
         for bucket in BUCKET_ORDER
         for item in grouped[bucket]
     ]
+    spotlight = watched + selected
     topic_counts = {
         bucket: len(items)
         for bucket, items in grouped.items()
@@ -937,13 +938,21 @@ def get_explore_digest(
         "digest_date": target.isoformat(),
         "period": "daily",
         "summary": (
-            f"今日精选 {len(spotlight)} 篇，来自 {len(source_counts)} 个来源。"
-            if spotlight
-            else "今天没有通过相关性判断的推荐论文。"
+            f"今日主题精选 {len(selected)} 篇，关注作者更新 {len(watched)} 篇。"
+            if selected or watched
+            else "今天没有主题精选或关注作者更新。"
         ),
         "scanned_count": len(daily),
+        "pending_count": sum(
+            item.get("judge_status") in {"pending", "failed"} for item in daily
+        ),
+        "judged_count": sum(
+            item.get("judge_status") == "completed" for item in daily
+        ),
+        "rejected_count": sum(item.get("gate_status") == "rejected" for item in daily),
         "surviving_count": len(surviving),
-        "highlighted_count": len(spotlight),
+        "highlighted_count": len(selected),
+        "watched_count": len(watched),
         "watched": watched,
         "buckets": [
             {
