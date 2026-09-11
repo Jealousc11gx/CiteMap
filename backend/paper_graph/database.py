@@ -543,10 +543,23 @@ def init_db(db_path: Optional[Path] = None) -> None:
         """,
         (
             "explore_default",
-            "LLM Inference Optimization",
-            "独立于项目的 LLM 推理优化论文探索主题",
+            "LLM 推理优化",
+            "用于发现大语言模型推理、压缩、部署相关论文的默认探索主题",
             json.dumps(["cs.CL", "cs.LG", "cs.AR"], ensure_ascii=False),
             "[]",
+        ),
+    )
+    cur.execute(
+        """
+        UPDATE explore_profiles
+        SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND name = ?
+        """,
+        (
+            "LLM 推理优化",
+            "用于发现大语言模型推理、压缩、部署相关论文的默认探索主题",
+            "explore_default",
+            "LLM Inference Optimization",
         ),
     )
     cur.execute(

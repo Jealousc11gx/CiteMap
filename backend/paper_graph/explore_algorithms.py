@@ -30,7 +30,7 @@ BUCKET_TITLES = {
     "kv_cache": "KV cache 压缩",
     "pruning_distill": "Pruning / 蒸馏",
     "diffusion": "Diffusion",
-    "trending": "Trending / 高热度但未归桶",
+    "trending": "热门 / 高热度但未归类",
     "survey": "Survey / 方法论与对比",
 }
 TOPIC_CAPS = {

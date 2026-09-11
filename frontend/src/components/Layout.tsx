@@ -257,18 +257,9 @@ function ProjectSwitcher() {
 export function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { activeProject } = useProject();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => setMobileNavOpen(false), [location.pathname, location.search]);
-
-  const currentPage = (location.pathname.startsWith("/settings")
-    ? { path: "/settings", label: "设置", icon: Settings }
-    : NAV_ITEMS.find((item) => (
-    item.path === "/"
-      ? location.pathname === "/"
-      : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)
-  )));
 
   const renderNavigation = () => (
     <>
@@ -351,12 +342,11 @@ export function Layout() {
       </aside>
 
       <div className="min-h-screen md:pl-56">
-        <header className="sticky top-0 z-30 flex h-14 items-center border-b border-border bg-background/95 px-4 backdrop-blur-sm sm:px-5 lg:px-6">
+        <header className="sticky top-0 z-30 flex h-14 items-center border-b border-border bg-background/95 px-4 backdrop-blur-sm md:hidden">
           <Button variant="ghost" size="icon" className="mr-2 md:hidden" onClick={() => setMobileNavOpen(true)} aria-label="打开导航">
             <Menu className="h-5 w-5" />
           </Button>
-          <span className="truncate text-sm font-semibold">{location.pathname.startsWith("/papers/") ? "论文详情" : currentPage?.label || "CiteMap"}</span>
-          <span className="ml-2 hidden truncate text-xs text-muted-foreground sm:inline">{currentPage?.path === "/" ? activeProject?.name : ""}</span>
+          <span className="truncate text-sm font-semibold">CiteMap</span>
         </header>
 
         <main id="main-content" className="mx-auto w-full max-w-[1480px] p-4 sm:p-5 lg:p-6">

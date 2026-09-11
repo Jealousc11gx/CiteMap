@@ -3,6 +3,7 @@ from datetime import date
 from paper_graph.explore_sources import (
     _expand_venues,
     _normalize_author,
+    fetch_watched_authors,
     hf_candidate_in_window,
     parse_trending_ranks,
 )
@@ -23,6 +24,10 @@ def test_trending_rank_keeps_first_unique_occurrence():
 def test_watched_author_normalization_handles_last_first():
     assert _normalize_author("van Baalen, Mart") == "mart van baalen"
     assert _normalize_author("  Mart   van Baalen ") == "mart van baalen"
+
+
+async def test_empty_watched_author_list_returns_without_request():
+    assert await fetch_watched_authors(authors=[]) == []
 
 
 def test_openreview_venue_templates_expand_current_and_next_year():

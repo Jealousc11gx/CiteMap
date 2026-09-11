@@ -25,7 +25,7 @@ export function Notes() {
   };
 
   return (
-    <div className="flex h-[calc(100dvh-7.5rem)] min-h-[520px] flex-col sm:h-[calc(100dvh-8.5rem)]">
+    <div className="flex h-[calc(100dvh-7.5rem)] min-h-[520px] flex-col sm:h-[calc(100dvh-8.5rem)] md:h-[calc(100dvh-5rem)]">
       <div className="mb-3">
         <h1 className="workspace-heading">笔记</h1>
         <p className="workspace-description">浏览、编辑、预览当前项目中的 Markdown 笔记。</p>

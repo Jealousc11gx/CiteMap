@@ -1,6 +1,11 @@
 from datetime import UTC, datetime
 
-from paper_graph.settings import explore_target_date, get_app_settings, update_app_settings
+from paper_graph.settings import (
+    explore_target_date,
+    get_app_settings,
+    get_explore_runtime_config,
+    update_app_settings,
+)
 
 
 def test_settings_never_return_secret_plaintext(tmp_path, monkeypatch):
@@ -35,3 +40,14 @@ def test_explore_target_defaults_to_previous_complete_utc_day(monkeypatch):
     now = datetime(2026, 9, 11, 2, 30, tzinfo=UTC)
 
     assert explore_target_date(now).isoformat() == "2026-09-10"
+
+
+def test_watched_authors_are_configurable(monkeypatch):
+    monkeypatch.setenv("EXPLORE_WATCHED_AUTHORS", "Alice Zhang|Lab A,Bob Li")
+
+    config = get_explore_runtime_config()
+
+    assert config["watched_authors"] == [
+        ("Alice Zhang", "Lab A"),
+        ("Bob Li", ""),
+    ]

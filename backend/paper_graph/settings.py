@@ -39,6 +39,15 @@ SETTING_DEFAULTS: dict[str, str] = {
     "EXPLORE_HF_TRENDING_MAX_AGE_DAYS": "30",
     "EXPLORE_INCLUDE_HISTORICAL_MILESTONES": "false",
     "EXPLORE_WATCHED_AUTHORS_ENABLED": "true",
+    "EXPLORE_WATCHED_AUTHORS": (
+        "Dan Alistarh|IST Austria,Song Han|MIT HAN Lab,"
+        "Markus Nagel|Qualcomm AI Research,Mart van Baalen|Qualcomm AI Research,"
+        "Yelysei Bondarenko|Qualcomm AI Research,Marios Fournarakis|Qualcomm AI Research,"
+        "Andrey Kuzmin|Qualcomm AI Research,Arash Behboodi|Qualcomm AI Research,"
+        "Babak Ehteshami Bejnordi|Qualcomm AI Research,"
+        "Tijmen Blankevoort|Qualcomm AI Research (alumni),"
+        "Christos Louizos|Qualcomm AI Research (alumni)"
+    ),
     "EXPLORE_WATCHED_AUTHORS_WINDOW_DAYS": "7",
     "EXPLORE_OPENREVIEW_ENABLED": "true",
     "EXPLORE_OPENREVIEW_WINDOW_DAYS": "7",
@@ -146,6 +155,17 @@ def env_list(name: str, default: str) -> list[str]:
     return [item.strip() for item in raw.replace("\n", ",").split(",") if item.strip()]
 
 
+def env_authors(name: str, default: str) -> list[tuple[str, str]]:
+    """读取“姓名|机构”格式的关注作者名单。"""
+    authors: list[tuple[str, str]] = []
+    for item in env_list(name, default):
+        author, separator, affiliation = item.partition("|")
+        author = author.strip()
+        if author:
+            authors.append((author, affiliation.strip() if separator else ""))
+    return authors
+
+
 def get_explore_runtime_config() -> dict:
     return {
         "arxiv_enabled": env_bool("EXPLORE_ARXIV_ENABLED", True),
@@ -158,6 +178,9 @@ def get_explore_runtime_config() -> dict:
             "EXPLORE_INCLUDE_HISTORICAL_MILESTONES", False
         ),
         "watched_authors_enabled": env_bool("EXPLORE_WATCHED_AUTHORS_ENABLED", True),
+        "watched_authors": env_authors(
+            "EXPLORE_WATCHED_AUTHORS", SETTING_DEFAULTS["EXPLORE_WATCHED_AUTHORS"]
+        ),
         "watched_authors_window_days": env_int(
             "EXPLORE_WATCHED_AUTHORS_WINDOW_DAYS", 7, minimum=1, maximum=365
         ),

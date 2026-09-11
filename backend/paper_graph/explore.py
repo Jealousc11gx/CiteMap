@@ -132,7 +132,7 @@ def _profile_state(candidate: dict, profile: dict) -> tuple[str, str, Optional[f
         blacklist=(*PREFILTER_BLACKLIST, *profile.get("exclude_keywords", [])),
     )
     if not should_gate:
-        return "prefilter_passed", "pending", None, {}, "通过 prefilter，等待 LLM Judge"
+        return "prefilter_passed", "pending", None, {}, "已通过预筛选，等待 LLM 判断"
     result = prefilter_hard_gate_result(blacklist_hits)
     return "rejected", "completed", 0, normalize_breakdown(result), result["reason"]
 
@@ -430,6 +430,7 @@ def scan_explore(
                 source_fetchers["arxiv_authors"] = lambda: run_source(
                     fetch_watched_authors(
                         categories=profile["categories"],
+                        authors=runtime["watched_authors"],
                         target_date=target,
                         window_days=runtime["watched_authors_window_days"],
                     )
@@ -938,7 +939,7 @@ def get_explore_digest(
         "summary": (
             f"今日精选 {len(spotlight)} 篇，来自 {len(source_counts)} 个来源。"
             if spotlight
-            else "今日没有已通过 Judge 的精选论文。"
+            else "今天没有通过相关性判断的推荐论文。"
         ),
         "scanned_count": len(daily),
         "surviving_count": len(surviving),

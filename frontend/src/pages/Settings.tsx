@@ -49,7 +49,7 @@ const EXPLORE_NAMES = [
   "EXPLORE_DAY_OFFSET", "EXPLORE_ARXIV_ENABLED", "EXPLORE_HF_DAILY_ENABLED",
   "EXPLORE_HF_TRENDING_ENABLED", "EXPLORE_HF_TRENDING_MAX_AGE_DAYS",
   "EXPLORE_INCLUDE_HISTORICAL_MILESTONES", "EXPLORE_WATCHED_AUTHORS_ENABLED",
-  "EXPLORE_WATCHED_AUTHORS_WINDOW_DAYS", "EXPLORE_OPENREVIEW_ENABLED",
+  "EXPLORE_WATCHED_AUTHORS", "EXPLORE_WATCHED_AUTHORS_WINDOW_DAYS", "EXPLORE_OPENREVIEW_ENABLED",
   "EXPLORE_OPENREVIEW_WINDOW_DAYS", "EXPLORE_OPENREVIEW_MAX_PAGES", "EXPLORE_OPENREVIEW_VENUES",
 ];
 const RADAR_NAMES = [
@@ -68,6 +68,26 @@ const SELECT_CLASS = "h-11 w-full rounded-md border border-input bg-background p
 
 function splitValues(value: string) {
   return value.split(/[\n,，]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function ExpandableTextarea({ value, onChange, rows = 4, placeholder }: {
+  value: string;
+  onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  rows?: number;
+  placeholder?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <Textarea
+      value={value}
+      onChange={onChange}
+      onFocus={() => setExpanded(true)}
+      onBlur={() => setExpanded(false)}
+      rows={expanded ? rows : 1}
+      placeholder={placeholder}
+      className={expanded ? "min-h-24 resize-y" : "h-9 min-h-0 resize-none overflow-hidden whitespace-nowrap"}
+    />
+  );
 }
 
 function asBool(value: string | undefined, fallback = false) {
@@ -331,13 +351,13 @@ export function Settings() {
 
         <div className="min-w-0">
           {section === "ai" && (
-            <Section title="模型" description="用于聊天、标注、Explore、Venue Trend、Paper River。">
-              {secretField("LLM_API_KEY", "API Key")}
-              <Field label="Base URL"><Input value={value("LLM_BASE_URL")} onChange={(event) => setValue("LLM_BASE_URL", event.target.value)} /></Field>
-              <Field label="Model"><Input value={value("LLM_MODEL")} onChange={(event) => setValue("LLM_MODEL", event.target.value)} /></Field>
-              <Field label="Provider type"><Input value={value("LLM_PROVIDER_TYPE")} onChange={(event) => setValue("LLM_PROVIDER_TYPE", event.target.value)} /></Field>
-              <Field label="Capabilities"><Input value={value("LLM_CAPABILITIES")} onChange={(event) => setValue("LLM_CAPABILITIES", event.target.value)} /></Field>
-              <Field label="Context size"><Input type="number" min="1024" value={value("LLM_MAX_CONTEXT_SIZE")} onChange={(event) => setValue("LLM_MAX_CONTEXT_SIZE", event.target.value)} /></Field>
+            <Section title="模型" description="聊天、论文标注、探索、趋势、Paper River 共用这套 OpenAI 兼容接口。">
+              {secretField("LLM_API_KEY", "API 密钥")}
+              <Field label="服务地址"><Input value={value("LLM_BASE_URL")} onChange={(event) => setValue("LLM_BASE_URL", event.target.value)} /></Field>
+              <Field label="模型名称"><Input value={value("LLM_MODEL")} onChange={(event) => setValue("LLM_MODEL", event.target.value)} /></Field>
+              <Field label="接口类型"><Input value={value("LLM_PROVIDER_TYPE")} onChange={(event) => setValue("LLM_PROVIDER_TYPE", event.target.value)} /></Field>
+              <Field label="能力声明"><Input value={value("LLM_CAPABILITIES")} onChange={(event) => setValue("LLM_CAPABILITIES", event.target.value)} /></Field>
+              <Field label="上下文长度"><Input type="number" min="1024" value={value("LLM_MAX_CONTEXT_SIZE")} onChange={(event) => setValue("LLM_MAX_CONTEXT_SIZE", event.target.value)} /></Field>
             </Section>
           )}
 
@@ -345,26 +365,27 @@ export function Settings() {
             <>
               <Section title="时间">
                 <Field label="目标日偏移" hint="UTC 天；默认 1。"><Input type="number" min="0" max="30" value={value("EXPLORE_DAY_OFFSET")} onChange={(event) => setValue("EXPLORE_DAY_OFFSET", event.target.value)} /></Field>
-                <Field label="HF Trending 最大年龄" hint="天；默认 30。"><Input type="number" min="0" max="3650" value={value("EXPLORE_HF_TRENDING_MAX_AGE_DAYS")} onChange={(event) => setValue("EXPLORE_HF_TRENDING_MAX_AGE_DAYS", event.target.value)} /></Field>
-                <ToggleField label="HF Trending" checked={isChecked("EXPLORE_HF_TRENDING_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_HF_TRENDING_ENABLED", checked)} />
-                <ToggleField label="历史 milestone" hint="允许 curated paper 突破年龄限制。" checked={isChecked("EXPLORE_INCLUDE_HISTORICAL_MILESTONES")} onChange={(checked) => setValue("EXPLORE_INCLUDE_HISTORICAL_MILESTONES", checked)} />
+                <Field label="Hugging Face 热门榜最大年龄" hint="只保留目标日前 N 天内的论文；默认 30 天。"><Input type="number" min="0" max="3650" value={value("EXPLORE_HF_TRENDING_MAX_AGE_DAYS")} onChange={(event) => setValue("EXPLORE_HF_TRENDING_MAX_AGE_DAYS", event.target.value)} /></Field>
+                <ToggleField label="Hugging Face 热门榜" hint="按 Hugging Face 热度补充近期论文。" checked={isChecked("EXPLORE_HF_TRENDING_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_HF_TRENDING_ENABLED", checked)} />
+                <ToggleField label="保留历史精选" hint="允许精选论文突破年龄限制。" checked={isChecked("EXPLORE_INCLUDE_HISTORICAL_MILESTONES")} onChange={(checked) => setValue("EXPLORE_INCLUDE_HISTORICAL_MILESTONES", checked)} />
               </Section>
               <Section title="来源">
                 <ToggleField label="arXiv" checked={isChecked("EXPLORE_ARXIV_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_ARXIV_ENABLED", checked)} />
-                <ToggleField label="HF Daily" checked={isChecked("EXPLORE_HF_DAILY_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_HF_DAILY_ENABLED", checked)} />
-                <ToggleField label="关注作者" checked={isChecked("EXPLORE_WATCHED_AUTHORS_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_WATCHED_AUTHORS_ENABLED", checked)} />
+                <ToggleField label="Hugging Face 日榜" hint="采集当天在 Hugging Face 出现的论文。" checked={isChecked("EXPLORE_HF_DAILY_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_HF_DAILY_ENABLED", checked)} />
+                <ToggleField label="关注作者" hint="采集这些作者在时间范围内的新论文。" checked={isChecked("EXPLORE_WATCHED_AUTHORS_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_WATCHED_AUTHORS_ENABLED", checked)} />
                 <ToggleField label="OpenReview" checked={isChecked("EXPLORE_OPENREVIEW_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_OPENREVIEW_ENABLED", checked)} />
-                <Field label="关注作者窗口"><Input type="number" min="1" max="365" value={value("EXPLORE_WATCHED_AUTHORS_WINDOW_DAYS")} onChange={(event) => setValue("EXPLORE_WATCHED_AUTHORS_WINDOW_DAYS", event.target.value)} /></Field>
-                <Field label="OpenReview 窗口"><Input type="number" min="1" max="365" value={value("EXPLORE_OPENREVIEW_WINDOW_DAYS")} onChange={(event) => setValue("EXPLORE_OPENREVIEW_WINDOW_DAYS", event.target.value)} /></Field>
-                <Field label="OpenReview 最大页数"><Input type="number" min="1" max="100" value={value("EXPLORE_OPENREVIEW_MAX_PAGES")} onChange={(event) => setValue("EXPLORE_OPENREVIEW_MAX_PAGES", event.target.value)} /></Field>
-                <Field label="OpenReview venues" hint="支持 {year}。"><Textarea rows={6} value={value("EXPLORE_OPENREVIEW_VENUES").replaceAll(",", "\n")} onChange={(event) => setValue("EXPLORE_OPENREVIEW_VENUES", splitValues(event.target.value).join(","))} /></Field>
+                <Field label="关注作者时间范围（天）" hint="抓取目标日前 N 天内这些作者提交的新论文；默认 7 天。"><Input type="number" min="1" max="365" value={value("EXPLORE_WATCHED_AUTHORS_WINDOW_DAYS")} onChange={(event) => setValue("EXPLORE_WATCHED_AUTHORS_WINDOW_DAYS", event.target.value)} /></Field>
+                <Field label="关注作者名单" hint="一行一个；可写成“姓名 | 机构”。点击输入框展开编辑。"><ExpandableTextarea rows={6} value={value("EXPLORE_WATCHED_AUTHORS").replaceAll(",", "\n")} onChange={(event) => setValue("EXPLORE_WATCHED_AUTHORS", splitValues(event.target.value).join(","))} placeholder="姓名 | 机构" /></Field>
+                <Field label="OpenReview 投稿时间范围（天）" hint="读取目标日前 N 天内的会议投稿；默认 7 天。"><Input type="number" min="1" max="365" value={value("EXPLORE_OPENREVIEW_WINDOW_DAYS")} onChange={(event) => setValue("EXPLORE_OPENREVIEW_WINDOW_DAYS", event.target.value)} /></Field>
+                <Field label="OpenReview 每个会议最多翻页数" hint="每页约 100 条；越大越完整，请求也越慢。"><Input type="number" min="1" max="100" value={value("EXPLORE_OPENREVIEW_MAX_PAGES")} onChange={(event) => setValue("EXPLORE_OPENREVIEW_MAX_PAGES", event.target.value)} /></Field>
+                <Field label="OpenReview 会议路径" hint="一行一个，支持 {year}，例如 ICLR.cc/{year}/Conference。点击输入框展开编辑。"><ExpandableTextarea rows={6} value={value("EXPLORE_OPENREVIEW_VENUES").replaceAll(",", "\n")} onChange={(event) => setValue("EXPLORE_OPENREVIEW_VENUES", splitValues(event.target.value).join(","))} /></Field>
               </Section>
               {profile && (
-                <Section title="探索主题">
+                <Section title="探索主题" description="默认主题用于发现 LLM 推理、压缩、部署相关论文，可按你的研究方向修改。">
                   <Field label="名称"><Input value={profile.name} onChange={(event) => { setProfile({ ...profile, name: event.target.value }); setDirty(true); setNotice(null); }} /></Field>
-                  <Field label="arXiv categories"><Input value={profile.categories.join(", ")} onChange={(event) => { setProfile({ ...profile, categories: splitValues(event.target.value) }); setDirty(true); setNotice(null); }} /></Field>
-                  <Field label="纳入关键词"><Textarea rows={4} value={profile.include_keywords.join("\n")} onChange={(event) => { setProfile({ ...profile, include_keywords: splitValues(event.target.value) }); setDirty(true); setNotice(null); }} /></Field>
-                  <Field label="排除关键词"><Textarea rows={4} value={profile.exclude_keywords.join("\n")} onChange={(event) => { setProfile({ ...profile, exclude_keywords: splitValues(event.target.value) }); setDirty(true); setNotice(null); }} /></Field>
+                  <Field label="arXiv 分类" hint="例如 cs.LG=机器学习，cs.CL=计算语言学，cs.AR=硬件架构。"><Input value={profile.categories.join(", ")} onChange={(event) => { setProfile({ ...profile, categories: splitValues(event.target.value) }); setDirty(true); setNotice(null); }} /></Field>
+                  <Field label="纳入关键词" hint="标题或摘要包含这些词时优先保留；一行一个。"><ExpandableTextarea rows={4} value={profile.include_keywords.join("\n")} onChange={(event) => { setProfile({ ...profile, include_keywords: splitValues(event.target.value) }); setDirty(true); setNotice(null); }} /></Field>
+                  <Field label="排除关键词" hint="标题或摘要包含这些词时过滤；一行一个。"><ExpandableTextarea rows={4} value={profile.exclude_keywords.join("\n")} onChange={(event) => { setProfile({ ...profile, exclude_keywords: splitValues(event.target.value) }); setDirty(true); setNotice(null); }} /></Field>
                 </Section>
               )}
             </>
@@ -374,21 +395,21 @@ export function Settings() {
             <>
               <Section title="项目" description={activeProject?.name || "未选择项目"}>
                 <ToggleField label="启用雷达" checked={radarConfig.enabled} disabled={!activeProject || Boolean(activeProject.is_system)} onChange={(checked) => setRadar("enabled", checked)} />
-                <ToggleField label="包含 cross-list" checked={radarConfig.include_cross_list} onChange={(checked) => setRadar("include_cross_list", checked)} />
+                <ToggleField label="包含交叉列表论文" hint="同时出现在其他分类的论文也纳入抓取。" checked={radarConfig.include_cross_list} onChange={(checked) => setRadar("include_cross_list", checked)} />
                 <ToggleField label="发送空结果" checked={radarConfig.send_empty} onChange={(checked) => setRadar("send_empty", checked)} />
-                <Field label="Categories"><Input value={radarConfig.categories.join(", ")} onChange={(event) => setRadar("categories", splitValues(event.target.value))} /></Field>
-                <Field label="Anchor paper IDs"><Input value={radarConfig.anchor_paper_ids.join(", ")} onChange={(event) => setRadar("anchor_paper_ids", splitValues(event.target.value))} /></Field>
+                <Field label="arXiv 分类"><Input value={radarConfig.categories.join(", ")} onChange={(event) => setRadar("categories", splitValues(event.target.value))} /></Field>
+                <Field label="参考论文 ID" hint="用已有论文作为相似度参照；多个 ID 用逗号分隔。"><Input value={radarConfig.anchor_paper_ids.join(", ")} onChange={(event) => setRadar("anchor_paper_ids", splitValues(event.target.value))} /></Field>
                 <Field label="纳入关键词"><Textarea rows={3} value={radarConfig.include_keywords.join("\n")} onChange={(event) => setRadar("include_keywords", splitValues(event.target.value))} /></Field>
                 <Field label="排除关键词"><Textarea rows={3} value={radarConfig.exclude_keywords.join("\n")} onChange={(event) => setRadar("exclude_keywords", splitValues(event.target.value))} /></Field>
-                <Field label="Top K"><Input type="number" min="1" max="100" value={radarConfig.top_k} onChange={(event) => setRadar("top_k", Number(event.target.value))} /></Field>
-                <Field label="Fetch limit"><Input type="number" min="1" max="500" value={radarConfig.fetch_limit} onChange={(event) => setRadar("fetch_limit", Number(event.target.value))} /></Field>
+                <Field label="返回前 K 篇"><Input type="number" min="1" max="100" value={radarConfig.top_k} onChange={(event) => setRadar("top_k", Number(event.target.value))} /></Field>
+                <Field label="抓取数量上限"><Input type="number" min="1" max="500" value={radarConfig.fetch_limit} onChange={(event) => setRadar("fetch_limit", Number(event.target.value))} /></Field>
                 <Field label="最低相似度"><Input type="number" min="0" max="1" step="0.01" value={radarConfig.min_score} onChange={(event) => setRadar("min_score", Number(event.target.value))} /></Field>
-                <Field label="计算模式"><select value={radarConfig.compute_mode} onChange={(event) => setRadar("compute_mode", event.target.value as RadarConfig["compute_mode"])} className={SELECT_CLASS}><option value="cloud">Cloud</option><option value="local">Local</option><option value="hybrid">Hybrid</option></select></Field>
-                <Field label="Profile override"><Textarea rows={4} value={radarConfig.profile_override} onChange={(event) => setRadar("profile_override", event.target.value)} /></Field>
+                <Field label="计算模式"><select value={radarConfig.compute_mode} onChange={(event) => setRadar("compute_mode", event.target.value as RadarConfig["compute_mode"])} className={SELECT_CLASS}><option value="cloud">云端计算</option><option value="local">本地计算</option><option value="hybrid">云端优先，本地备用</option></select></Field>
+                <Field label="项目简介补充" hint="补充给相似度模型的研究方向说明。"><ExpandableTextarea rows={4} value={radarConfig.profile_override} onChange={(event) => setRadar("profile_override", event.target.value)} /></Field>
               </Section>
-              <Section title="Worker">
+              <Section title="远程雷达服务">
                 <Field label="URL"><Input value={connection.remote_url} onChange={(event) => { setConnection({ ...connection, remote_url: event.target.value }); setDirty(true); setNotice(null); }} placeholder="https://radar.example.workers.dev" /></Field>
-                <Field label="Token">
+                <Field label="访问令牌">
                   <div className="flex gap-2">
                     <Input type="password" value={secretInputs.RADAR_TOKEN || ""} onChange={(event) => { setSecretInputs((current) => ({ ...current, RADAR_TOKEN: event.target.value })); setClearRadarToken(false); setDirty(true); setNotice(null); }} placeholder={connection.token_configured && !clearRadarToken ? "已配置" : "未配置"} autoComplete="off" />
                     {connection.token_configured && !clearRadarToken && <Button type="button" size="icon" variant="outline" onClick={() => { setClearRadarToken(true); setDirty(true); setNotice(null); }} aria-label="清除 Token" title="保存后清除"><Trash2 className="h-4 w-4" /></Button>}
@@ -396,15 +417,15 @@ export function Settings() {
                   {clearRadarToken && <span className="mt-1.5 block text-xs text-destructive">保存后清除</span>}
                 </Field>
               </Section>
-              <Section title="Embedding">
-                <Field label="Provider"><select value={value("RADAR_EMBEDDING_PROVIDER")} onChange={(event) => setValue("RADAR_EMBEDDING_PROVIDER", event.target.value)} className={SELECT_CLASS}><option value="local">Local</option><option value="api">API</option><option value="lexical">Lexical</option></select></Field>
-                <Field label="Model"><Input value={value("RADAR_EMBEDDING_MODEL")} onChange={(event) => setValue("RADAR_EMBEDDING_MODEL", event.target.value)} /></Field>
-                {secretField("RADAR_EMBEDDING_API_KEY", "API Key", "留空复用全局 LLM API Key。")}
-                <Field label="Base URL"><Input value={value("RADAR_EMBEDDING_BASE_URL")} onChange={(event) => setValue("RADAR_EMBEDDING_BASE_URL", event.target.value)} /></Field>
-                <Field label="Task"><Input value={value("RADAR_EMBEDDING_TASK")} onChange={(event) => setValue("RADAR_EMBEDDING_TASK", event.target.value)} /></Field>
-                <Field label="Prompt name"><Input value={value("RADAR_EMBEDDING_PROMPT_NAME")} onChange={(event) => setValue("RADAR_EMBEDDING_PROMPT_NAME", event.target.value)} /></Field>
-                <Field label="Batch size"><Input type="number" min="1" max="1024" value={value("RADAR_EMBEDDING_BATCH_SIZE")} onChange={(event) => setValue("RADAR_EMBEDDING_BATCH_SIZE", event.target.value)} /></Field>
-                <ToggleField label="Trust remote code" checked={isChecked("RADAR_EMBEDDING_TRUST_REMOTE_CODE", true)} onChange={(checked) => setValue("RADAR_EMBEDDING_TRUST_REMOTE_CODE", checked)} />
+              <Section title="向量检索">
+                <Field label="服务方式"><select value={value("RADAR_EMBEDDING_PROVIDER")} onChange={(event) => setValue("RADAR_EMBEDDING_PROVIDER", event.target.value)} className={SELECT_CLASS}><option value="local">本地模型</option><option value="api">兼容 API</option><option value="lexical">关键词匹配</option></select></Field>
+                <Field label="模型名称"><Input value={value("RADAR_EMBEDDING_MODEL")} onChange={(event) => setValue("RADAR_EMBEDDING_MODEL", event.target.value)} /></Field>
+                {secretField("RADAR_EMBEDDING_API_KEY", "向量服务 API 密钥", "留空复用全局 LLM API 密钥。")}
+                <Field label="服务地址"><Input value={value("RADAR_EMBEDDING_BASE_URL")} onChange={(event) => setValue("RADAR_EMBEDDING_BASE_URL", event.target.value)} /></Field>
+                <Field label="向量任务"><Input value={value("RADAR_EMBEDDING_TASK")} onChange={(event) => setValue("RADAR_EMBEDDING_TASK", event.target.value)} /></Field>
+                <Field label="提示词名称"><Input value={value("RADAR_EMBEDDING_PROMPT_NAME")} onChange={(event) => setValue("RADAR_EMBEDDING_PROMPT_NAME", event.target.value)} /></Field>
+                <Field label="批处理数量"><Input type="number" min="1" max="1024" value={value("RADAR_EMBEDDING_BATCH_SIZE")} onChange={(event) => setValue("RADAR_EMBEDDING_BATCH_SIZE", event.target.value)} /></Field>
+                <ToggleField label="允许加载远程代码" hint="仅在使用本地模型时生效。" checked={isChecked("RADAR_EMBEDDING_TRUST_REMOTE_CODE", true)} onChange={(checked) => setValue("RADAR_EMBEDDING_TRUST_REMOTE_CODE", checked)} />
               </Section>
               <Section title="生成与日志">
                 <ToggleField label="生成 LLM 摘要" checked={isChecked("RADAR_LLM_ENABLED", true)} onChange={(checked) => setValue("RADAR_LLM_ENABLED", checked)} />
@@ -415,10 +436,10 @@ export function Settings() {
               <Section title="邮件">
                 <Field label="发件人"><Input value={value("RADAR_EMAIL_SENDER")} onChange={(event) => setValue("RADAR_EMAIL_SENDER", event.target.value)} /></Field>
                 <Field label="收件人"><Input value={value("RADAR_EMAIL_RECEIVER")} onChange={(event) => setValue("RADAR_EMAIL_RECEIVER", event.target.value)} /></Field>
-                {secretField("RADAR_EMAIL_PASSWORD", "Password / App Token")}
-                <Field label="SMTP Host"><Input value={value("RADAR_SMTP_HOST")} onChange={(event) => setValue("RADAR_SMTP_HOST", event.target.value)} /></Field>
-                <Field label="SMTP Port"><Input type="number" min="1" max="65535" value={value("RADAR_SMTP_PORT")} onChange={(event) => setValue("RADAR_SMTP_PORT", event.target.value)} /></Field>
-                <ToggleField label="SMTP SSL" checked={isChecked("RADAR_SMTP_SSL", true)} onChange={(checked) => setValue("RADAR_SMTP_SSL", checked)} />
+                {secretField("RADAR_EMAIL_PASSWORD", "邮箱密码 / 应用专用密码")}
+                <Field label="SMTP 服务器"><Input value={value("RADAR_SMTP_HOST")} onChange={(event) => setValue("RADAR_SMTP_HOST", event.target.value)} /></Field>
+                <Field label="SMTP 端口"><Input type="number" min="1" max="65535" value={value("RADAR_SMTP_PORT")} onChange={(event) => setValue("RADAR_SMTP_PORT", event.target.value)} /></Field>
+                <ToggleField label="启用 SSL 加密" checked={isChecked("RADAR_SMTP_SSL", true)} onChange={(checked) => setValue("RADAR_SMTP_SSL", checked)} />
               </Section>
             </>
           )}
@@ -426,11 +447,11 @@ export function Settings() {
           {section === "integrations" && (
             <>
               <Section title="Semantic Scholar">
-                {secretField("SEMANTIC_SCHOLAR_API_KEY", "API Key")}
+                {secretField("SEMANTIC_SCHOLAR_API_KEY", "API 密钥")}
               </Section>
               <Section title="OpenReview">
-                <Field label="Email"><Input type="email" value={value("OPENREVIEW_EMAIL")} onChange={(event) => setValue("OPENREVIEW_EMAIL", event.target.value)} /></Field>
-                {secretField("OPENREVIEW_PASSWORD", "Password")}
+                <Field label="邮箱"><Input type="email" value={value("OPENREVIEW_EMAIL")} onChange={(event) => setValue("OPENREVIEW_EMAIL", event.target.value)} /></Field>
+                {secretField("OPENREVIEW_PASSWORD", "密码")}
               </Section>
             </>
           )}

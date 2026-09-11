@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle2, ExternalLink, FileSearch, Loader2, Radar as RadarIcon, RefreshCw, Save, Settings2, X } from "lucide-react";
+import { CheckCircle2, ExternalLink, FileSearch, Loader2, Radar as RadarIcon, RefreshCw, Save, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -160,9 +160,8 @@ export function Radar() {
           <h1 className="workspace-heading flex items-center gap-2"><RadarIcon className="h-5 w-5 text-primary" />论文雷达</h1>
           <p className="workspace-description">{activeProject.name}</p>
         </div>
-        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-          <Button variant="outline" onClick={() => navigate("/settings?tab=radar")}><Settings2 className="mr-2 h-4 w-4" />雷达设置</Button>
-          <Button onClick={runScan} disabled={scanning}>{scanning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}{scanning ? "运行中" : config.compute_mode === "local" ? "本地扫描" : "获取结果"}</Button>
+        <div className="w-full sm:w-auto">
+          {(config.compute_mode !== "cloud" || connectionSaved) && <Button onClick={runScan} disabled={scanning}>{scanning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}{scanning ? "运行中" : config.compute_mode === "local" ? "本地扫描" : "获取结果"}</Button>}
         </div>
       </div>
       {error && <ErrorAlert title="雷达操作失败" message={error} onRetry={() => void load()} />}
@@ -172,11 +171,11 @@ export function Radar() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
             <div className="min-w-0 flex-1">
               <h2 className="text-sm font-semibold">连接云端雷达</h2>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">配置 Worker URL 与 Token 后获取云端结果。</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">配置远程服务地址与访问令牌后获取云端结果。</p>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
               <Button variant="outline" asChild><a href={RADAR_DEPLOYMENT_GUIDE_URL} target="_blank" rel="noreferrer">部署文档<ExternalLink className="ml-2 h-4 w-4" /></a></Button>
-              <Button onClick={() => navigate("/settings?tab=radar")}>打开雷达设置</Button>
+              <Button onClick={() => navigate("/settings?tab=radar")}>去设置</Button>
             </div>
           </div>
         </section>
@@ -184,7 +183,7 @@ export function Radar() {
       <div className="flex gap-1 overflow-x-auto border-b pb-2" role="tablist" aria-label="雷达结果状态">
         {(["all", "unread", "read", "saved", "dismissed"] as const).map((item) => <Button key={item} size="sm" variant={tab === item ? "secondary" : "ghost"} onClick={() => setTab(item)} role="tab" aria-selected={tab === item} className="flex-none">{item === "all" ? "全部" : item === "unread" ? "未读" : item === "read" ? "已读" : item === "saved" ? "已保存" : "已忽略"}<span className="ml-1 tabular-nums text-muted-foreground">{item === "all" ? matches.length : stateCount(item)}</span></Button>)}
       </div>
-      {loading ? <div className="divide-y rounded-lg border" aria-label="正在加载雷达结果">{Array.from({ length: 4 }, (_, index) => <div key={index} className="space-y-3 p-5"><Skeleton className="h-5 w-2/3" /><Skeleton className="h-4 w-1/3" /><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-5/6" /></div>)}</div> : filtered.length === 0 ? <div className="flex min-h-64 items-center justify-center rounded-lg border border-dashed p-8 text-center"><div><FileSearch className="mx-auto h-8 w-8 text-muted-foreground" /><p className="mt-3 font-medium">{matches.length ? "该状态下没有结果" : "还没有雷达结果"}</p><p className="mt-1 text-sm text-muted-foreground">{matches.length ? "切换状态查看其他论文。" : config.compute_mode === "local" ? "运行本地扫描获取候选论文。" : "连接 Worker 后获取云端结果。"}</p>{matches.length === 0 && <Button className="mt-4" size="sm" onClick={connectionSaved || config.compute_mode === "local" ? runScan : () => navigate("/settings?tab=radar")}>{connectionSaved || config.compute_mode === "local" ? "开始扫描" : "配置雷达"}</Button>}</div></div> : <div className="divide-y overflow-hidden rounded-lg border bg-card">{filtered.map((match) => <RadarCard key={match.id} match={match} onState={setState} />)}</div>}
+      {loading ? <div className="divide-y rounded-lg border" aria-label="正在加载雷达结果">{Array.from({ length: 4 }, (_, index) => <div key={index} className="space-y-3 p-5"><Skeleton className="h-5 w-2/3" /><Skeleton className="h-4 w-1/3" /><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-5/6" /></div>)}</div> : filtered.length === 0 ? <div className="flex min-h-64 items-center justify-center rounded-lg border border-dashed p-8 text-center"><div><FileSearch className="mx-auto h-8 w-8 text-muted-foreground" /><p className="mt-3 font-medium">{matches.length ? "该状态下没有结果" : "还没有雷达结果"}</p><p className="mt-1 text-sm text-muted-foreground">{matches.length ? "切换状态查看其他论文。" : config.compute_mode === "local" ? "运行本地扫描获取候选论文。" : connectionSaved ? "获取云端结果，开始筛选论文。" : "完成上方云端连接后即可获取结果。"}</p>{matches.length === 0 && (connectionSaved || config.compute_mode === "local") && <Button className="mt-4" size="sm" onClick={runScan}>开始扫描</Button>}</div></div> : <div className="divide-y overflow-hidden rounded-lg border bg-card">{filtered.map((match) => <RadarCard key={match.id} match={match} onState={setState} />)}</div>}
     </div>
   );
 }

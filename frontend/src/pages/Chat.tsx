@@ -658,7 +658,7 @@ export function Chat() {
   );
 
   return (
-    <div className="flex h-[calc(100dvh-7.5rem)] min-h-[520px] flex-col overflow-hidden sm:h-[calc(100dvh-8.5rem)]">
+    <div className="flex h-[calc(100dvh-7.5rem)] min-h-[520px] flex-col overflow-hidden sm:h-[calc(100dvh-8.5rem)] md:h-[calc(100dvh-5rem)]">
       <div className="mb-3">
         <h1 className="workspace-heading">研究助手</h1>
         <p className="workspace-description">围绕当前项目检索、分析、整理论文。</p>

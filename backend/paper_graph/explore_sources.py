@@ -441,14 +441,18 @@ def _normalize_author(name: str) -> str:
 async def fetch_watched_authors(
     *,
     categories: list[str] | None = None,
+    authors: list[tuple[str, str]] | tuple[tuple[str, str], ...] | None = None,
     target_date: date | datetime | None = None,
     window_days: int = 7,
     page_size: int = 50,
     max_pages: int = 3,
 ) -> list[dict]:
+    watched_authors = tuple(WATCHED_AUTHORS if authors is None else authors)
+    if not watched_authors:
+        return []
     target = _target_datetime(target_date)
     window_start = target - timedelta(days=window_days)
-    author_query = "+OR+".join(f'au:"{name.replace(" ", "+")}"' for name, _ in WATCHED_AUTHORS)
+    author_query = "+OR+".join(f'au:"{name.replace(" ", "+")}"' for name, _ in watched_authors)
     category_query = "+OR+".join(f"cat:{category}" for category in (categories or ["cs.LG", "cs.CL", "cs.CV", "cs.AR", "stat.ML"]))
     query = f"({author_query})+AND+({category_query})"
     entries: list[dict] = []
@@ -481,7 +485,7 @@ async def fetch_watched_authors(
         if not candidate:
             continue
         paper_authors = {_normalize_author(author) for author in candidate["authors"]}
-        matched = [(name, affiliation) for name, affiliation in WATCHED_AUTHORS if _normalize_author(name) in paper_authors]
+        matched = [(name, affiliation) for name, affiliation in watched_authors if _normalize_author(name) in paper_authors]
         if not matched:
             continue
         candidate["source_metadata"] = {
