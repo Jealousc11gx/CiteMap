@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bot, Check, ChevronDown, Cloud, Compass, Eye, EyeOff, Loader2, Radar as RadarIcon, Save, Trash2, UserRound } from "lucide-react";
+import { Bot, Check, ChevronDown, Cloud, Compass, Eye, EyeOff, Info, Loader2, Radar as RadarIcon, Save, Trash2, UserRound } from "lucide-react";
 import { useProject } from "@/contexts/ProjectContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,12 +120,12 @@ function Section({ title, description, children, collapsible = false, defaultOpe
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <label className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(240px,420px)] sm:items-start sm:gap-8">
+    <label className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_320px] sm:items-start sm:gap-8">
       <span className="min-w-0 pt-1.5">
         <span className="block text-sm font-medium">{label}</span>
         {hint && <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{hint}</span>}
       </span>
-      <span className="block min-w-0 has-[input[type=number]]:max-w-32 sm:justify-self-end">{children}</span>
+      <span className="block min-w-0 sm:w-80 sm:justify-self-end">{children}</span>
     </label>
   );
 }
@@ -158,6 +158,15 @@ function ToggleField({ label, hint, checked, onChange, disabled = false }: {
   );
 }
 
+function InfoRow({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-3 py-3 text-sm">
+      <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+      <div><p className="font-medium">{title}</p><p className="mt-0.5 max-w-2xl text-xs leading-5 text-muted-foreground">{children}</p></div>
+    </div>
+  );
+}
+
 export function Settings() {
   const { activeProject } = useProject();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -167,6 +176,7 @@ export function Settings() {
   const [profile, setProfile] = useState<ExploreProfile | null>(null);
   const [libraryAuthors, setLibraryAuthors] = useState<string[]>([]);
   const [selectedAuthor, setSelectedAuthor] = useState("");
+  const [authorSearchOpen, setAuthorSearchOpen] = useState(false);
   const [radarConfig, setRadarConfig] = useState(EMPTY_RADAR_CONFIG);
   const [connection, setConnection] = useState<RadarConnection>({ remote_url: "", token_configured: false });
   const [secretInputs, setSecretInputs] = useState<Record<string, string>>({});
@@ -227,12 +237,20 @@ export function Settings() {
   };
   const isChecked = (name: string, fallback = false) => asBool(value(name), fallback);
   const watchedAuthorNames = useMemo(() => splitValues(value("EXPLORE_WATCHED_AUTHORS")).map((item) => item.split("|")[0].trim()), [settings]);
+  const availableAuthors = useMemo(() => {
+    const query = selectedAuthor.trim().toLocaleLowerCase();
+    return libraryAuthors
+      .filter((author) => !watchedAuthorNames.some((watched) => watched.toLocaleLowerCase() === author.toLocaleLowerCase()))
+      .filter((author) => !query || author.toLocaleLowerCase().includes(query))
+      .slice(0, 8);
+  }, [libraryAuthors, selectedAuthor, watchedAuthorNames]);
   const addWatchedAuthor = () => {
     const author = selectedAuthor.trim();
     if (!author || watchedAuthorNames.some((item) => item.toLowerCase() === author.toLowerCase())) return;
     const current = value("EXPLORE_WATCHED_AUTHORS").trim();
     setValue("EXPLORE_WATCHED_AUTHORS", current ? `${current},${author}` : author);
     setSelectedAuthor("");
+    setAuthorSearchOpen(false);
   };
   const setRadar = <K extends keyof typeof radarConfig>(name: K, next: (typeof radarConfig)[K]) => {
     setRadarConfig((current) => ({ ...current, [name]: next }));
@@ -407,22 +425,57 @@ export function Settings() {
                 <Field label="关注作者时间范围（天）" hint="抓取目标日前 N 天内这些作者提交的新论文；默认 7 天。"><Input type="number" min="1" max="365" value={value("EXPLORE_WATCHED_AUTHORS_WINDOW_DAYS")} onChange={(event) => setValue("EXPLORE_WATCHED_AUTHORS_WINDOW_DAYS", event.target.value)} /></Field>
                 <Field label="关注作者" hint="订阅作者更新。先从论文库选择，必要时再手动补充机构信息。">
                   <div className="space-y-2">
-                    <div className="flex gap-2">
+                    <div className="flex items-start gap-2">
                       <div className="relative min-w-0 flex-1">
                         <UserRound className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <select aria-label="从论文库选择作者" value={selectedAuthor} onChange={(event) => setSelectedAuthor(event.target.value)} className={`${SELECT_CLASS} pl-9`}>
-                          <option value="">从论文库选择作者</option>
-                          {libraryAuthors.filter((author) => !watchedAuthorNames.some((item) => item.toLowerCase() === author.toLowerCase())).map((author) => <option key={author} value={author}>{author}</option>)}
-                        </select>
+                        <Input
+                          aria-label="搜索论文库作者"
+                          value={selectedAuthor}
+                          maxLength={120}
+                          onChange={(event) => {
+                            setSelectedAuthor(event.target.value);
+                            setAuthorSearchOpen(true);
+                          }}
+                          onFocus={() => setAuthorSearchOpen(true)}
+                          onBlur={() => window.setTimeout(() => setAuthorSearchOpen(false), 100)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              addWatchedAuthor();
+                            }
+                            if (event.key === "Escape") setAuthorSearchOpen(false);
+                          }}
+                          placeholder="输入姓名搜索"
+                          autoComplete="off"
+                          className="pl-9"
+                        />
+                        {authorSearchOpen && <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+                          {availableAuthors.length ? availableAuthors.map((author) => (
+                            <button
+                              key={author}
+                              type="button"
+                              title={author}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => {
+                                setSelectedAuthor(author);
+                                setAuthorSearchOpen(false);
+                              }}
+                              className="block w-full truncate rounded-sm px-2 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              {author}
+                            </button>
+                          )) : <p className="px-2 py-2 text-sm text-muted-foreground">没有匹配作者</p>}
+                        </div>}
                       </div>
                       <Button type="button" variant="outline" size="sm" onClick={addWatchedAuthor} disabled={!selectedAuthor}>添加</Button>
                     </div>
-                    <ExpandableTextarea rows={6} value={value("EXPLORE_WATCHED_AUTHORS").replaceAll(",", "\n")} onChange={(event) => setValue("EXPLORE_WATCHED_AUTHORS", splitValues(event.target.value).join(","))} placeholder="姓名 | 机构" />
+                    <ExpandableTextarea rows={6} value={value("EXPLORE_WATCHED_AUTHORS").replaceAll(",", "\n")} onChange={(event) => setValue("EXPLORE_WATCHED_AUTHORS", splitValues(event.target.value).join(","))} placeholder="姓名 | 机构，可手动补充" />
                   </div>
                 </Field>
                 <Field label="OpenReview 投稿时间范围（天）" hint="读取目标日前 N 天内的会议投稿；默认 7 天。"><Input type="number" min="1" max="365" value={value("EXPLORE_OPENREVIEW_WINDOW_DAYS")} onChange={(event) => setValue("EXPLORE_OPENREVIEW_WINDOW_DAYS", event.target.value)} /></Field>
-                <Field label="OpenReview Max pages" hint="每页是 HTTP 请求，不调用 LLM，不消耗 token。满足时间范围后会提前停止。"><Input type="number" min="1" max="100" value={value("EXPLORE_OPENREVIEW_MAX_PAGES")} onChange={(event) => setValue("EXPLORE_OPENREVIEW_MAX_PAGES", event.target.value)} /></Field>
+                <Field label="OpenReview Max pages" hint="单次采集每个会议最多请求的页数。"><Input type="number" min="1" max="100" value={value("EXPLORE_OPENREVIEW_MAX_PAGES")} onChange={(event) => setValue("EXPLORE_OPENREVIEW_MAX_PAGES", event.target.value)} /></Field>
                 <Field label="OpenReview 会议路径" hint="一行一个，支持 {year}，例如 ICLR.cc/{year}/Conference。点击输入框展开编辑。"><ExpandableTextarea rows={6} value={value("EXPLORE_OPENREVIEW_VENUES").replaceAll(",", "\n")} onChange={(event) => setValue("EXPLORE_OPENREVIEW_VENUES", splitValues(event.target.value).join(","))} /></Field>
+                <InfoRow title="OpenReview 采集说明">按投稿时间倒序请求；进入设定时间范围外，或返回不足一页时自动停止。采集阶段不调用 LLM，不消耗 token。</InfoRow>
               </Section>
               {profile && (
                 <Section title="探索主题" description="默认主题用于发现 LLM 推理、压缩、部署相关论文，可按你的研究方向修改。">
@@ -492,9 +545,10 @@ export function Settings() {
               <Section title="Semantic Scholar">
                 {secretField("SEMANTIC_SCHOLAR_API_KEY", "API Key")}
               </Section>
-              <Section title="OpenReview">
+              <Section title="OpenReview" description="公开投稿无需登录。仅在会议需要认证访问时填写账户。">
                 <Field label="Email"><Input type="email" value={value("OPENREVIEW_EMAIL")} onChange={(event) => setValue("OPENREVIEW_EMAIL", event.target.value)} /></Field>
                 {secretField("OPENREVIEW_PASSWORD", "密码")}
+                <InfoRow title="可选账户">留空不影响公开会议采集。保存后凭据只写入本地 backend/.env。</InfoRow>
               </Section>
             </>
           )}

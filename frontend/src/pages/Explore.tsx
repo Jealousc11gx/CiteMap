@@ -168,8 +168,8 @@ function CandidateRow({ candidate, busy, onOpen, onTriage }: {
 function Metric({ label, value, emphasized = false }: { label: string; value: number; emphasized?: boolean }) {
   return (
     <div className="min-w-0 py-3">
-      <p className={`font-mono text-xl font-semibold tabular-nums ${emphasized ? "text-primary" : "text-foreground"}`}>{value}</p>
-      <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
+      <p className={`font-mono text-lg font-semibold tabular-nums sm:text-xl ${emphasized ? "text-primary" : "text-foreground"}`}>{value}</p>
+      <p className="mt-0.5 text-[11px] text-muted-foreground sm:text-xs">{label}</p>
     </div>
   );
 }
@@ -231,38 +231,35 @@ function DigestView({ digest, trends, onOpen, onGoPool, onManageAuthors }: {
   const sources = Object.entries(digest.source_counts).sort((a, b) => b[1] - a[1]).map(([source, count]) => [sourceLabel(source), count] as [string, number]);
   const hasSelection = digest.highlighted_count > 0;
   return (
-    <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+    <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
       <Card>
-        <CardHeader className="border-b">
-          <CardTitle className="flex items-center gap-2 text-xl"><BookOpen className="h-5 w-5 text-primary" />{digest.digest_date}</CardTitle>
-          <CardDescription>每日论文速览</CardDescription>
-        </CardHeader>
-        <CardContent className="divide-y px-0 py-0">
-          <section className="px-5 py-5 sm:px-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2"><UserRound className="h-4 w-4 text-primary" /><h2 className="font-semibold">关注作者更新</h2><Badge variant="outline" className="font-normal">{digest.watched_count}</Badge></div>
-              <Button variant="ghost" size="sm" onClick={onManageAuthors}>管理关注作者</Button>
-            </div>
-            <div className="mt-1">
-              {digest.watched.length
-                ? digest.watched.map((candidate) => <SpotlightRow key={candidate.id} candidate={candidate} onOpen={onOpen} />)
-                : <p className="py-5 text-sm text-muted-foreground">今天没有关注作者更新。</p>}
-            </div>
-          </section>
-          <section className="px-5 py-5 sm:px-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /><h2 className="font-semibold">主题精选</h2><Badge variant="outline" className="font-normal">{digest.highlighted_count}</Badge></div>
-              <Button variant="ghost" size="sm" onClick={onGoPool}>查看候选论文 <ArrowUpRight className="ml-1 h-3.5 w-3.5" /></Button>
-            </div>
-            <div className="mt-1">
-              {selected.length
-                ? selected.map((candidate) => <SpotlightRow key={candidate.id} candidate={candidate} onOpen={onOpen} />)
-                : <p className="py-5 text-sm text-muted-foreground">今天没有通过筛选的主题论文。</p>}
-            </div>
-          </section>
+        <CardContent className="px-0 py-0">
+          <div className="grid grid-cols-3 divide-x">
+            <section className="flex min-h-40 min-w-0 flex-col p-4 sm:p-5">
+              <BookOpen className="h-4 w-4 text-primary" />
+              <p className="mt-3 truncate text-sm font-semibold tabular-nums sm:text-base">{digest.digest_date}</p>
+              <p className="mt-1 text-xs text-muted-foreground">每日论文速览</p>
+            </section>
+            <section className="flex min-h-40 min-w-0 flex-col p-4 sm:p-5">
+              <UserRound className="h-4 w-4 text-primary" />
+              <div className="mt-3 flex min-w-0 items-center gap-2"><h2 className="min-w-0 text-sm font-semibold sm:text-base">关注作者</h2><span className="text-sm tabular-nums text-muted-foreground">{digest.watched_count}</span></div>
+              <p className="mt-1 text-xs text-muted-foreground">{digest.watched_count ? "篇新论文" : "今天无更新"}</p>
+              <button type="button" onClick={onManageAuthors} className="mt-auto w-fit text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">管理订阅</button>
+            </section>
+            <section className="flex min-h-40 min-w-0 flex-col p-4 sm:p-5">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <div className="mt-3 flex min-w-0 items-center gap-2"><h2 className="min-w-0 text-sm font-semibold sm:text-base">主题精选</h2><span className="text-sm tabular-nums text-muted-foreground">{digest.highlighted_count}</span></div>
+              <p className="mt-1 text-xs text-muted-foreground">{digest.highlighted_count ? "篇值得阅读" : "今天无精选"}</p>
+              <button type="button" onClick={onGoPool} className="mt-auto w-fit text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">查看候选</button>
+            </section>
+          </div>
+          {(digest.watched.length > 0 || selected.length > 0) && <div className="border-t px-5 py-1 sm:px-6">
+            {digest.watched.map((candidate) => <SpotlightRow key={`watched-${candidate.id}`} candidate={candidate} onOpen={onOpen} />)}
+            {selected.map((candidate) => <SpotlightRow key={`selected-${candidate.id}`} candidate={candidate} onOpen={onOpen} />)}
+          </div>}
         </CardContent>
       </Card>
-      <aside className="space-y-4 xl:sticky xl:top-6">
+      <aside className="space-y-4 lg:sticky lg:top-6">
         <section className="rounded-lg border bg-card px-4 py-4">
           <div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">今日进度</h2><span className="text-xs text-muted-foreground">{digest.digest_date}</span></div>
           <div className="mt-2 grid grid-cols-2 divide-x border-y [&>*:nth-child(even)]:pl-4 [&>*:nth-child(n+3)]:border-t">
