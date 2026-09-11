@@ -132,14 +132,15 @@ function ProjectSwitcher() {
           </span>
           <span className="min-w-0 flex-1 text-left">
             <span className="block truncate text-xs font-semibold">{activeProject?.name || (loading ? "加载项目" : "选择项目")}</span>
-            <span className="block text-[10px] font-normal text-muted-foreground">{activeProject ? `${activeProject.paper_count} 篇论文` : "研究项目"}</span>
+            <span className="block text-[10px] font-normal text-muted-foreground">{activeProject ? "当前研究项目" : "选择研究项目"}</span>
           </span>
+          {activeProject && <span className="w-12 text-right text-[10px] tabular-nums text-muted-foreground">{activeProject.paper_count} 篇</span>}
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
         </Button>
         {open && (
           <div className="absolute left-0 top-full z-[60] mt-2 w-full min-w-64 rounded-lg border border-border bg-popover p-1 shadow-md md:left-full md:top-0 md:ml-2 md:mt-0 md:w-72" role="menu">
             <div className="flex h-9 items-center justify-between border-b border-border px-2">
-              <span className="text-xs font-medium text-muted-foreground">项目</span>
+            <span className="text-xs font-medium text-muted-foreground">项目</span>
               <TooltipPrimitive.Provider delayDuration={250}>
                 <TooltipPrimitive.Root>
                   <TooltipPrimitive.Trigger asChild>
@@ -170,15 +171,15 @@ function ProjectSwitcher() {
                       selectProject(project.id);
                       setOpen(false);
                     }}
-                    className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)_3rem] items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <Check className={`h-4 w-4 shrink-0 ${project.id === activeProject?.id ? "opacity-100" : "opacity-0"}`} />
                     <span className="min-w-0 flex-1 truncate">{project.name}</span>
-                    <span className="text-xs tabular-nums text-muted-foreground">{project.paper_count}</span>
+                    <span className="text-right text-xs tabular-nums text-muted-foreground">{project.paper_count}</span>
                   </button>
                   {!project.is_system && (
                     <TooltipPrimitive.Provider delayDuration={250}>
-                      <div className="flex shrink-0 items-center pr-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                      <div className="flex w-[60px] shrink-0 items-center justify-end pr-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                         <TooltipPrimitive.Root>
                           <TooltipPrimitive.Trigger asChild>
                             <button
@@ -216,6 +217,7 @@ function ProjectSwitcher() {
                       </div>
                     </TooltipPrimitive.Provider>
                   )}
+                  {project.is_system ? <span className="w-[60px] shrink-0" aria-hidden="true" /> : null}
                 </div>
               ))}
             </div>
@@ -316,7 +318,6 @@ export function Layout() {
           </button>
           <ThemeToggle />
         </div>
-        <p className="mt-3 px-2 text-[10px] leading-4 text-muted-foreground">本地优先的论文关系与研究笔记</p>
       </div>
     </>
   );

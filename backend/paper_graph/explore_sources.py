@@ -600,7 +600,7 @@ async def fetch_openreview(
                         break
                     notes.extend(page)
                     oldest = _openreview_date(page[-1])
-                    if oldest and oldest < window_start:
+                    if len(page) < 1000 or oldest and oldest < window_start:
                         break
                     offset += 1000
                     await asyncio.sleep(1)

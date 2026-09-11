@@ -151,14 +151,14 @@ export function Radar() {
     }
   };
 
-  if (!activeProject) return <div className="flex min-h-64 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">请先选择研究项目</div>;
+  if (!activeProject || activeProject.is_system) return <div className="flex min-h-64 items-center justify-center rounded-lg border border-dashed p-8 text-center"><div><RadarIcon className="mx-auto h-8 w-8 text-muted-foreground" /><p className="mt-3 font-medium">请选择研究项目</p><p className="mt-1 text-sm text-muted-foreground">论文雷达会根据项目中的论文生成个性化推荐。</p></div></div>;
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="workspace-heading flex items-center gap-2"><RadarIcon className="h-5 w-5 text-primary" />论文雷达</h1>
-          <p className="workspace-description">{activeProject.name}</p>
+          <p className="workspace-description">根据“{activeProject.name}”中的 {activeProject.paper_count} 篇论文生成个性化推荐。</p>
         </div>
         <div className="w-full sm:w-auto">
           {(config.compute_mode !== "cloud" || connectionSaved) && <Button onClick={runScan} disabled={scanning}>{scanning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}{scanning ? "运行中" : config.compute_mode === "local" ? "本地扫描" : "获取结果"}</Button>}

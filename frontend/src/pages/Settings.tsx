@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bot, Check, Cloud, Compass, Eye, EyeOff, Loader2, Radar as RadarIcon, Save, Trash2 } from "lucide-react";
+import { Bot, Check, ChevronDown, Cloud, Compass, Eye, EyeOff, Loader2, Radar as RadarIcon, Save, Trash2, UserRound } from "lucide-react";
 import { useProject } from "@/contexts/ProjectContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   fetchAppSettings,
   fetchExploreProfiles,
+  fetchPapers,
   fetchRadarConfig,
   fetchRadarConnection,
   updateAppSettings,
@@ -17,7 +18,7 @@ import {
   updateRadarConfig,
   updateRadarConnection,
 } from "@/services/api";
-import type { AppSettings, ExploreProfile, RadarConfig, RadarConnection } from "@/types";
+import type { AppSettings, ExploreProfile, Paper, RadarConfig, RadarConnection } from "@/types";
 
 type SettingsSection = "ai" | "explore" | "radar" | "integrations";
 
@@ -95,14 +96,24 @@ function asBool(value: string | undefined, fallback = false) {
   return ["1", "true", "yes", "on"].includes(value.toLowerCase());
 }
 
-function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+function Section({ title, description, children, collapsible = false, defaultOpen = true }: { title: string; description?: string; children: React.ReactNode; collapsible?: boolean; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const heading = <><h2 className="text-sm font-semibold">{title}</h2>{description && <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{description}</p>}</>;
+  if (collapsible) {
+    return (
+      <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="group mb-5 rounded-xl border border-border/80 bg-card px-5 py-1 last:mb-0 sm:px-6">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <div className="min-w-0">{heading}</div>
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="divide-y divide-border/60 pb-4">{children}</div>
+      </details>
+    );
+  }
   return (
-    <section className="border-b border-border py-7 first:pt-0 last:border-b-0">
-      <div className="mb-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {description && <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{description}</p>}
-      </div>
-      <div className="divide-y divide-border/70">{children}</div>
+    <section className="mb-5 rounded-xl border border-border/80 bg-card px-5 py-5 last:mb-0 sm:px-6">
+      <div className="mb-2">{heading}</div>
+      <div className="divide-y divide-border/60">{children}</div>
     </section>
   );
 }
@@ -114,7 +125,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
         <span className="block text-sm font-medium">{label}</span>
         {hint && <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{hint}</span>}
       </span>
-      <span className="block min-w-0">{children}</span>
+      <span className="block min-w-0 has-[input[type=number]]:max-w-32 sm:justify-self-end">{children}</span>
     </label>
   );
 }
@@ -139,9 +150,9 @@ function ToggleField({ label, hint, checked, onChange, disabled = false }: {
         aria-label={label}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`relative h-6 w-10 shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${checked ? "border-primary bg-primary" : "border-input bg-muted"}`}
+        className={`relative h-6 w-11 shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${checked ? "border-primary bg-primary" : "border-input bg-muted"}`}
       >
-        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${checked ? "translate-x-4" : "translate-x-0.5"}`} />
+        <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${checked ? "translate-x-5" : "translate-x-0"}`} />
       </button>
     </div>
   );
@@ -154,6 +165,8 @@ export function Settings() {
   const section = SETTINGS_SECTIONS.some((item) => item.id === requestedSection) ? requestedSection! : "ai";
   const [settings, setSettings] = useState<AppSettings>({ values: {}, secrets: {} });
   const [profile, setProfile] = useState<ExploreProfile | null>(null);
+  const [libraryAuthors, setLibraryAuthors] = useState<string[]>([]);
+  const [selectedAuthor, setSelectedAuthor] = useState("");
   const [radarConfig, setRadarConfig] = useState(EMPTY_RADAR_CONFIG);
   const [connection, setConnection] = useState<RadarConnection>({ remote_url: "", token_configured: false });
   const [secretInputs, setSecretInputs] = useState<Record<string, string>>({});
@@ -172,12 +185,19 @@ export function Settings() {
     Promise.all([
       fetchAppSettings(),
       fetchExploreProfiles(),
+      fetchPapers(),
       fetchRadarConnection(),
       activeProject ? fetchRadarConfig(activeProject.id) : Promise.resolve(null),
-    ]).then(([nextSettings, profiles, nextConnection, nextRadar]) => {
+    ]).then(([nextSettings, profiles, papers, nextConnection, nextRadar]) => {
       if (cancelled) return;
       setSettings(nextSettings);
       setProfile(profiles[0] || null);
+      const authors = new Set<string>();
+      (papers as Paper[]).forEach((paper) => (paper.authors || []).forEach((author) => {
+        const name = typeof author === "string" ? author.trim() : "";
+        if (name) authors.add(name);
+      }));
+      setLibraryAuthors(Array.from(authors).sort((a, b) => a.localeCompare(b)));
       setConnection(nextConnection);
       if (nextRadar) setRadarConfig(nextRadar);
       setDirty(false);
@@ -206,6 +226,14 @@ export function Settings() {
     setNotice(null);
   };
   const isChecked = (name: string, fallback = false) => asBool(value(name), fallback);
+  const watchedAuthorNames = useMemo(() => splitValues(value("EXPLORE_WATCHED_AUTHORS")).map((item) => item.split("|")[0].trim()), [settings]);
+  const addWatchedAuthor = () => {
+    const author = selectedAuthor.trim();
+    if (!author || watchedAuthorNames.some((item) => item.toLowerCase() === author.toLowerCase())) return;
+    const current = value("EXPLORE_WATCHED_AUTHORS").trim();
+    setValue("EXPLORE_WATCHED_AUTHORS", current ? `${current},${author}` : author);
+    setSelectedAuthor("");
+  };
   const setRadar = <K extends keyof typeof radarConfig>(name: K, next: (typeof radarConfig)[K]) => {
     setRadarConfig((current) => ({ ...current, [name]: next }));
     setDirty(true);
@@ -289,7 +317,7 @@ export function Settings() {
       setSecretInputs((current) => ({ ...current, ...Object.fromEntries(SECRET_NAMES.map((name) => [name, ""])) }));
       setClearedSecrets(new Set());
       if (profile) setProfile(await updateExploreProfile(profile));
-      if (activeProject) setRadarConfig(await updateRadarConfig(activeProject.id, radarConfig));
+      if (activeProject && !activeProject.is_system) setRadarConfig(await updateRadarConfig(activeProject.id, radarConfig));
       if (connection.remote_url.trim() || secretInputs.RADAR_TOKEN?.trim() || clearRadarToken) {
         setConnection(await updateRadarConnection(connection.remote_url, secretInputs.RADAR_TOKEN, clearRadarToken));
         setSecretInputs((current) => ({ ...current, RADAR_TOKEN: "" }));
@@ -316,7 +344,7 @@ export function Settings() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="flex min-h-10 items-center justify-between gap-4 border-b border-border pb-5">
+      <div className="flex min-h-10 items-center justify-between gap-4 pb-5">
         <div>
           <h1 className="text-xl font-semibold">设置</h1>
           <div className="mt-1 min-h-4" aria-live="polite">
@@ -350,16 +378,18 @@ export function Settings() {
         </nav>
 
         <div className="min-w-0">
-          {section === "ai" && (
-            <Section title="模型" description="聊天、论文标注、探索、趋势、Paper River 共用这套 OpenAI 兼容接口。">
-              {secretField("LLM_API_KEY", "API 密钥")}
-              <Field label="服务地址"><Input value={value("LLM_BASE_URL")} onChange={(event) => setValue("LLM_BASE_URL", event.target.value)} /></Field>
-              <Field label="模型名称"><Input value={value("LLM_MODEL")} onChange={(event) => setValue("LLM_MODEL", event.target.value)} /></Field>
-              <Field label="接口类型"><Input value={value("LLM_PROVIDER_TYPE")} onChange={(event) => setValue("LLM_PROVIDER_TYPE", event.target.value)} /></Field>
-              <Field label="能力声明"><Input value={value("LLM_CAPABILITIES")} onChange={(event) => setValue("LLM_CAPABILITIES", event.target.value)} /></Field>
-              <Field label="上下文长度"><Input type="number" min="1024" value={value("LLM_MAX_CONTEXT_SIZE")} onChange={(event) => setValue("LLM_MAX_CONTEXT_SIZE", event.target.value)} /></Field>
+          {section === "ai" && <>
+            <Section title="OpenAI-compatible API" description="聊天、论文标注、探索、趋势、Paper River 共用。">
+              {secretField("LLM_API_KEY", "API Key")}
+              <Field label="Base URL"><Input value={value("LLM_BASE_URL")} onChange={(event) => setValue("LLM_BASE_URL", event.target.value)} /></Field>
+              <Field label="Model"><Input value={value("LLM_MODEL")} onChange={(event) => setValue("LLM_MODEL", event.target.value)} /></Field>
             </Section>
-          )}
+            <Section title="Advanced" collapsible defaultOpen={false}>
+              <Field label="Provider type" hint="Kimi Agent SDK provider 类型，例如 openai_legacy。"><Input value={value("LLM_PROVIDER_TYPE")} onChange={(event) => setValue("LLM_PROVIDER_TYPE", event.target.value)} /></Field>
+              <Field label="Capabilities" hint="Kimi Agent SDK provider capability ID。通常留空。"><Input value={value("LLM_CAPABILITIES")} onChange={(event) => setValue("LLM_CAPABILITIES", event.target.value)} /></Field>
+              <Field label="Context length"><Input type="number" min="1024" value={value("LLM_MAX_CONTEXT_SIZE")} onChange={(event) => setValue("LLM_MAX_CONTEXT_SIZE", event.target.value)} /></Field>
+            </Section>
+          </>}
 
           {section === "explore" && (
             <>
@@ -372,12 +402,26 @@ export function Settings() {
               <Section title="来源">
                 <ToggleField label="arXiv" checked={isChecked("EXPLORE_ARXIV_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_ARXIV_ENABLED", checked)} />
                 <ToggleField label="Hugging Face 日榜" hint="采集当天在 Hugging Face 出现的论文。" checked={isChecked("EXPLORE_HF_DAILY_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_HF_DAILY_ENABLED", checked)} />
-                <ToggleField label="订阅关注作者更新" hint="这些作者的新论文会单独出现在探索首页，不受主题精选数量上限影响。" checked={isChecked("EXPLORE_WATCHED_AUTHORS_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_WATCHED_AUTHORS_ENABLED", checked)} />
+                <ToggleField label="订阅关注作者更新" hint="这些作者的新论文会单独出现在探索首页，不受主题精选数量上限影响。" checked={isChecked("EXPLORE_WATCHED_AUTHORS_ENABLED")} onChange={(checked) => setValue("EXPLORE_WATCHED_AUTHORS_ENABLED", checked)} />
                 <ToggleField label="OpenReview" checked={isChecked("EXPLORE_OPENREVIEW_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_OPENREVIEW_ENABLED", checked)} />
                 <Field label="关注作者时间范围（天）" hint="抓取目标日前 N 天内这些作者提交的新论文；默认 7 天。"><Input type="number" min="1" max="365" value={value("EXPLORE_WATCHED_AUTHORS_WINDOW_DAYS")} onChange={(event) => setValue("EXPLORE_WATCHED_AUTHORS_WINDOW_DAYS", event.target.value)} /></Field>
-                <Field label="关注作者名单" hint="一行一个；可写成“姓名 | 机构”。点击输入框展开编辑。"><ExpandableTextarea rows={6} value={value("EXPLORE_WATCHED_AUTHORS").replaceAll(",", "\n")} onChange={(event) => setValue("EXPLORE_WATCHED_AUTHORS", splitValues(event.target.value).join(","))} placeholder="姓名 | 机构" /></Field>
+                <Field label="关注作者" hint="订阅作者更新。先从论文库选择，必要时再手动补充机构信息。">
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <div className="relative min-w-0 flex-1">
+                        <UserRound className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <select aria-label="从论文库选择作者" value={selectedAuthor} onChange={(event) => setSelectedAuthor(event.target.value)} className={`${SELECT_CLASS} pl-9`}>
+                          <option value="">从论文库选择作者</option>
+                          {libraryAuthors.filter((author) => !watchedAuthorNames.some((item) => item.toLowerCase() === author.toLowerCase())).map((author) => <option key={author} value={author}>{author}</option>)}
+                        </select>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" onClick={addWatchedAuthor} disabled={!selectedAuthor}>添加</Button>
+                    </div>
+                    <ExpandableTextarea rows={6} value={value("EXPLORE_WATCHED_AUTHORS").replaceAll(",", "\n")} onChange={(event) => setValue("EXPLORE_WATCHED_AUTHORS", splitValues(event.target.value).join(","))} placeholder="姓名 | 机构" />
+                  </div>
+                </Field>
                 <Field label="OpenReview 投稿时间范围（天）" hint="读取目标日前 N 天内的会议投稿；默认 7 天。"><Input type="number" min="1" max="365" value={value("EXPLORE_OPENREVIEW_WINDOW_DAYS")} onChange={(event) => setValue("EXPLORE_OPENREVIEW_WINDOW_DAYS", event.target.value)} /></Field>
-                <Field label="OpenReview 每个会议最多翻页数" hint="每页约 100 条；越大越完整，请求也越慢。"><Input type="number" min="1" max="100" value={value("EXPLORE_OPENREVIEW_MAX_PAGES")} onChange={(event) => setValue("EXPLORE_OPENREVIEW_MAX_PAGES", event.target.value)} /></Field>
+                <Field label="OpenReview Max pages" hint="每页是 HTTP 请求，不调用 LLM，不消耗 token。满足时间范围后会提前停止。"><Input type="number" min="1" max="100" value={value("EXPLORE_OPENREVIEW_MAX_PAGES")} onChange={(event) => setValue("EXPLORE_OPENREVIEW_MAX_PAGES", event.target.value)} /></Field>
                 <Field label="OpenReview 会议路径" hint="一行一个，支持 {year}，例如 ICLR.cc/{year}/Conference。点击输入框展开编辑。"><ExpandableTextarea rows={6} value={value("EXPLORE_OPENREVIEW_VENUES").replaceAll(",", "\n")} onChange={(event) => setValue("EXPLORE_OPENREVIEW_VENUES", splitValues(event.target.value).join(","))} /></Field>
               </Section>
               {profile && (
@@ -393,12 +437,11 @@ export function Settings() {
 
           {section === "radar" && (
             <>
-              <Section title="项目" description={activeProject?.name || "未选择项目"}>
+              <Section title="项目" description={activeProject ? `基于“${activeProject.name}”中的论文生成个性化推荐。` : "请先选择研究项目。"} collapsible defaultOpen>
                 <ToggleField label="启用雷达" checked={radarConfig.enabled} disabled={!activeProject || Boolean(activeProject.is_system)} onChange={(checked) => setRadar("enabled", checked)} />
                 <ToggleField label="包含交叉列表论文" hint="同时出现在其他分类的论文也纳入抓取。" checked={radarConfig.include_cross_list} onChange={(checked) => setRadar("include_cross_list", checked)} />
                 <ToggleField label="发送空结果" checked={radarConfig.send_empty} onChange={(checked) => setRadar("send_empty", checked)} />
                 <Field label="arXiv 分类"><Input value={radarConfig.categories.join(", ")} onChange={(event) => setRadar("categories", splitValues(event.target.value))} /></Field>
-                <Field label="参考论文 ID" hint="用已有论文作为相似度参照；多个 ID 用逗号分隔。"><Input value={radarConfig.anchor_paper_ids.join(", ")} onChange={(event) => setRadar("anchor_paper_ids", splitValues(event.target.value))} /></Field>
                 <Field label="纳入关键词"><Textarea rows={3} value={radarConfig.include_keywords.join("\n")} onChange={(event) => setRadar("include_keywords", splitValues(event.target.value))} /></Field>
                 <Field label="排除关键词"><Textarea rows={3} value={radarConfig.exclude_keywords.join("\n")} onChange={(event) => setRadar("exclude_keywords", splitValues(event.target.value))} /></Field>
                 <Field label="返回前 K 篇"><Input type="number" min="1" max="100" value={radarConfig.top_k} onChange={(event) => setRadar("top_k", Number(event.target.value))} /></Field>
@@ -407,9 +450,9 @@ export function Settings() {
                 <Field label="计算模式"><select value={radarConfig.compute_mode} onChange={(event) => setRadar("compute_mode", event.target.value as RadarConfig["compute_mode"])} className={SELECT_CLASS}><option value="cloud">云端计算</option><option value="local">本地计算</option><option value="hybrid">云端优先，本地备用</option></select></Field>
                 <Field label="项目简介补充" hint="补充给相似度模型的研究方向说明。"><ExpandableTextarea rows={4} value={radarConfig.profile_override} onChange={(event) => setRadar("profile_override", event.target.value)} /></Field>
               </Section>
-              <Section title="远程雷达服务">
-                <Field label="URL"><Input value={connection.remote_url} onChange={(event) => { setConnection({ ...connection, remote_url: event.target.value }); setDirty(true); setNotice(null); }} placeholder="https://radar.example.workers.dev" /></Field>
-                <Field label="访问令牌">
+              <Section title="远程雷达服务" collapsible defaultOpen>
+                <Field label="Worker URL"><Input value={connection.remote_url} onChange={(event) => { setConnection({ ...connection, remote_url: event.target.value }); setDirty(true); setNotice(null); }} placeholder="https://radar.example.workers.dev" /></Field>
+                <Field label="Access Token">
                   <div className="flex gap-2">
                     <Input type="password" value={secretInputs.RADAR_TOKEN || ""} onChange={(event) => { setSecretInputs((current) => ({ ...current, RADAR_TOKEN: event.target.value })); setClearRadarToken(false); setDirty(true); setNotice(null); }} placeholder={connection.token_configured && !clearRadarToken ? "已配置" : "未配置"} autoComplete="off" />
                     {connection.token_configured && !clearRadarToken && <Button type="button" size="icon" variant="outline" onClick={() => { setClearRadarToken(true); setDirty(true); setNotice(null); }} aria-label="清除 Token" title="保存后清除"><Trash2 className="h-4 w-4" /></Button>}
@@ -417,23 +460,23 @@ export function Settings() {
                   {clearRadarToken && <span className="mt-1.5 block text-xs text-destructive">保存后清除</span>}
                 </Field>
               </Section>
-              <Section title="向量检索">
+              <Section title="向量检索" collapsible={true} defaultOpen={false}>
                 <Field label="服务方式"><select value={value("RADAR_EMBEDDING_PROVIDER")} onChange={(event) => setValue("RADAR_EMBEDDING_PROVIDER", event.target.value)} className={SELECT_CLASS}><option value="local">本地模型</option><option value="api">兼容 API</option><option value="lexical">关键词匹配</option></select></Field>
-                <Field label="模型名称"><Input value={value("RADAR_EMBEDDING_MODEL")} onChange={(event) => setValue("RADAR_EMBEDDING_MODEL", event.target.value)} /></Field>
-                {secretField("RADAR_EMBEDDING_API_KEY", "向量服务 API 密钥", "留空复用全局 LLM API 密钥。")}
-                <Field label="服务地址"><Input value={value("RADAR_EMBEDDING_BASE_URL")} onChange={(event) => setValue("RADAR_EMBEDDING_BASE_URL", event.target.value)} /></Field>
-                <Field label="向量任务"><Input value={value("RADAR_EMBEDDING_TASK")} onChange={(event) => setValue("RADAR_EMBEDDING_TASK", event.target.value)} /></Field>
-                <Field label="提示词名称"><Input value={value("RADAR_EMBEDDING_PROMPT_NAME")} onChange={(event) => setValue("RADAR_EMBEDDING_PROMPT_NAME", event.target.value)} /></Field>
-                <Field label="批处理数量"><Input type="number" min="1" max="1024" value={value("RADAR_EMBEDDING_BATCH_SIZE")} onChange={(event) => setValue("RADAR_EMBEDDING_BATCH_SIZE", event.target.value)} /></Field>
+                <Field label="Embedding model"><Input value={value("RADAR_EMBEDDING_MODEL")} onChange={(event) => setValue("RADAR_EMBEDDING_MODEL", event.target.value)} /></Field>
+                {secretField("RADAR_EMBEDDING_API_KEY", "Embedding API Key", "留空复用全局 LLM API Key。")}
+                <Field label="Base URL"><Input value={value("RADAR_EMBEDDING_BASE_URL")} onChange={(event) => setValue("RADAR_EMBEDDING_BASE_URL", event.target.value)} /></Field>
+                <Field label="Task"><Input value={value("RADAR_EMBEDDING_TASK")} onChange={(event) => setValue("RADAR_EMBEDDING_TASK", event.target.value)} /></Field>
+                <Field label="Prompt name"><Input value={value("RADAR_EMBEDDING_PROMPT_NAME")} onChange={(event) => setValue("RADAR_EMBEDDING_PROMPT_NAME", event.target.value)} /></Field>
+                <Field label="Batch size"><Input type="number" min="1" max="1024" value={value("RADAR_EMBEDDING_BATCH_SIZE")} onChange={(event) => setValue("RADAR_EMBEDDING_BATCH_SIZE", event.target.value)} /></Field>
                 <ToggleField label="允许加载远程代码" hint="仅在使用本地模型时生效。" checked={isChecked("RADAR_EMBEDDING_TRUST_REMOTE_CODE", true)} onChange={(checked) => setValue("RADAR_EMBEDDING_TRUST_REMOTE_CODE", checked)} />
               </Section>
-              <Section title="生成与日志">
+              <Section title="生成与日志" collapsible={true} defaultOpen={false}>
                 <ToggleField label="生成 LLM 摘要" checked={isChecked("RADAR_LLM_ENABLED", true)} onChange={(checked) => setValue("RADAR_LLM_ENABLED", checked)} />
                 <ToggleField label="摘要失败则停止" checked={isChecked("RADAR_LLM_REQUIRED")} onChange={(checked) => setValue("RADAR_LLM_REQUIRED", checked)} />
                 <ToggleField label="雷达调试日志" checked={isChecked("RADAR_DEBUG")} onChange={(checked) => setValue("RADAR_DEBUG", checked)} />
                 <ToggleField label="项目调试模式" checked={radarConfig.debug} onChange={(checked) => setRadar("debug", checked)} />
               </Section>
-              <Section title="邮件">
+              <Section title="邮件" collapsible={true} defaultOpen={false}>
                 <Field label="发件人"><Input value={value("RADAR_EMAIL_SENDER")} onChange={(event) => setValue("RADAR_EMAIL_SENDER", event.target.value)} /></Field>
                 <Field label="收件人"><Input value={value("RADAR_EMAIL_RECEIVER")} onChange={(event) => setValue("RADAR_EMAIL_RECEIVER", event.target.value)} /></Field>
                 {secretField("RADAR_EMAIL_PASSWORD", "邮箱密码 / 应用专用密码")}
@@ -447,10 +490,10 @@ export function Settings() {
           {section === "integrations" && (
             <>
               <Section title="Semantic Scholar">
-                {secretField("SEMANTIC_SCHOLAR_API_KEY", "API 密钥")}
+                {secretField("SEMANTIC_SCHOLAR_API_KEY", "API Key")}
               </Section>
               <Section title="OpenReview">
-                <Field label="邮箱"><Input type="email" value={value("OPENREVIEW_EMAIL")} onChange={(event) => setValue("OPENREVIEW_EMAIL", event.target.value)} /></Field>
+                <Field label="Email"><Input type="email" value={value("OPENREVIEW_EMAIL")} onChange={(event) => setValue("OPENREVIEW_EMAIL", event.target.value)} /></Field>
                 {secretField("OPENREVIEW_PASSWORD", "密码")}
               </Section>
             </>

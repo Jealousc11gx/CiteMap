@@ -174,33 +174,26 @@ function Metric({ label, value, emphasized = false }: { label: string; value: nu
   );
 }
 
-function TodayDistribution({ digest }: { digest: ExploreDigest }) {
-  const topics = Object.entries(digest.topic_counts).sort((a, b) => b[1] - a[1]);
-  const sources = Object.entries(digest.source_counts).sort((a, b) => b[1] - a[1]);
-  const hasSelection = digest.highlighted_count > 0;
-  const [open, setOpen] = useState(hasSelection);
+function DistributionPanel({ title, summary, items, defaultOpen }: {
+  title: string;
+  summary: string;
+  items: Array<[string, number]>;
+  defaultOpen: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="group rounded-lg border bg-card">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <span>今日统计</span>
+        <span>{title}</span>
         <span className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
-          {hasSelection ? `${digest.highlighted_count} 篇精选` : "暂无精选"}
+          {summary}
           <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
         </span>
       </summary>
-      <div className="space-y-5 border-t px-4 py-4">
-        <div>
-          <p className="text-xs font-medium">精选主题</p>
-          {topics.length ? <div className="mt-3 space-y-3">{topics.map(([topic, count]) => (
-            <div key={topic} className="flex items-center justify-between text-sm"><span>{topic}</span><span className="tabular-nums text-muted-foreground">{count} 篇</span></div>
-          ))}</div> : <p className="mt-2 text-sm text-muted-foreground">无</p>}
-        </div>
-        <div className="border-t pt-4">
-          <p className="text-xs font-medium">采集来源</p>
-          {sources.length ? <div className="mt-3 space-y-3">{sources.map(([source, count]) => (
-            <div key={source} className="flex items-center justify-between text-sm"><span>{sourceLabel(source)}</span><span className="tabular-nums text-muted-foreground">{count} 篇</span></div>
-          ))}</div> : <p className="mt-2 text-sm text-muted-foreground">无</p>}
-        </div>
+      <div className="space-y-3 border-t px-4 py-4">
+        {items.length ? items.map(([label, count]) => (
+          <div key={label} className="flex items-center justify-between gap-3 text-sm"><span className="truncate">{label}</span><span className="tabular-nums text-muted-foreground">{count} 篇</span></div>
+        )) : <p className="text-sm text-muted-foreground">无</p>}
       </div>
     </details>
   );
@@ -234,6 +227,9 @@ function DigestView({ digest, trends, onOpen, onGoPool, onManageAuthors }: {
 }) {
   if (!digest) return <EmptyState title="还没有今日数据" description="采集新论文后，这里会生成当天的论文速览。" />;
   const selected = digest.buckets.flatMap((bucket) => bucket.papers);
+  const topics = Object.entries(digest.topic_counts).sort((a, b) => b[1] - a[1]);
+  const sources = Object.entries(digest.source_counts).sort((a, b) => b[1] - a[1]).map(([source, count]) => [sourceLabel(source), count] as [string, number]);
+  const hasSelection = digest.highlighted_count > 0;
   return (
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
       <Card>
@@ -241,8 +237,8 @@ function DigestView({ digest, trends, onOpen, onGoPool, onManageAuthors }: {
           <CardTitle className="flex items-center gap-2 text-xl"><BookOpen className="h-5 w-5 text-primary" />{digest.digest_date}</CardTitle>
           <CardDescription>每日论文速览</CardDescription>
         </CardHeader>
-        <CardContent className="divide-y px-5 py-0 sm:px-6">
-          <section className="py-5">
+        <CardContent className="divide-y px-0 py-0">
+          <section className="px-5 py-5 sm:px-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2"><UserRound className="h-4 w-4 text-primary" /><h2 className="font-semibold">关注作者更新</h2><Badge variant="outline" className="font-normal">{digest.watched_count}</Badge></div>
               <Button variant="ghost" size="sm" onClick={onManageAuthors}>管理关注作者</Button>
@@ -253,7 +249,7 @@ function DigestView({ digest, trends, onOpen, onGoPool, onManageAuthors }: {
                 : <p className="py-5 text-sm text-muted-foreground">今天没有关注作者更新。</p>}
             </div>
           </section>
-          <section className="py-5">
+          <section className="px-5 py-5 sm:px-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /><h2 className="font-semibold">主题精选</h2><Badge variant="outline" className="font-normal">{digest.highlighted_count}</Badge></div>
               <Button variant="ghost" size="sm" onClick={onGoPool}>查看候选论文 <ArrowUpRight className="ml-1 h-3.5 w-3.5" /></Button>
@@ -278,7 +274,8 @@ function DigestView({ digest, trends, onOpen, onGoPool, onManageAuthors }: {
           {digest.pending_count > 0 && <Button variant="ghost" size="sm" className="mt-2 w-full justify-between px-0" onClick={onGoPool}>处理待判断论文 <ArrowUpRight className="h-3.5 w-3.5" /></Button>}
         </section>
         <TrendSummary trends={trends} />
-        <TodayDistribution key={`${digest.digest_date}-${digest.highlighted_count > 0}`} digest={digest} />
+        <DistributionPanel key={`topics-${digest.digest_date}-${hasSelection}`} title="主题分布" summary={hasSelection ? `${digest.highlighted_count} 篇精选` : "无"} items={topics} defaultOpen={hasSelection} />
+        <DistributionPanel key={`sources-${digest.digest_date}-${hasSelection}`} title="来源分布" summary={hasSelection ? `${digest.scanned_count} 篇采集` : "无推荐"} items={sources} defaultOpen={hasSelection} />
       </aside>
     </div>
   );
