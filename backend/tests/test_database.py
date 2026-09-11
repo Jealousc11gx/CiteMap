@@ -46,6 +46,31 @@ def test_init_db_idempotent(tmp_path):
     assert "papers" in tables
 
 
+def test_init_db_keeps_explore_prefilter_default_aligned(tmp_path):
+    db_file = tmp_path / "test.db"
+    init_db(db_file)
+    conn = get_connection(db_file)
+    profile = conn.execute(
+        "SELECT include_keywords FROM explore_profiles WHERE id = 'explore_default'"
+    ).fetchone()
+    assert profile["include_keywords"] == "[]"
+
+    conn.execute(
+        "UPDATE explore_profiles SET include_keywords = ? WHERE id = 'explore_default'",
+        ('["quantization", "kv cache", "serving", "inference"]',),
+    )
+    conn.commit()
+    conn.close()
+
+    init_db(db_file)
+    conn = get_connection(db_file)
+    migrated = conn.execute(
+        "SELECT include_keywords FROM explore_profiles WHERE id = 'explore_default'"
+    ).fetchone()
+    conn.close()
+    assert migrated["include_keywords"] == "[]"
+
+
 def test_upsert_paper_inserts(tmp_path):
     db_file = tmp_path / "test.db"
     init_db(db_file)

@@ -758,7 +758,7 @@ export function Graph() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-end justify-between gap-6">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-end sm:gap-6">
         <div><h1 className="workspace-heading">知识图谱</h1><p className="workspace-description">探索论文、团队、作者与机构之间的关系。</p></div>
         <Button variant="outline" size="sm" onClick={() => void loadGraphs()} disabled={loading}><RefreshCcw className={loading ? "animate-spin" : ""} />刷新数据</Button>
       </div>
@@ -771,7 +771,7 @@ export function Graph() {
         setSelectedNode(null);
         setSelectedEdge(null);
       }} className="w-full">
-        <div className="flex min-h-11 items-center gap-2 border-y border-border/70 py-2">
+        <div className="flex min-h-11 items-center gap-2 overflow-x-auto border-y border-border/70 py-2">
           <TabsList className="h-8 shrink-0"><TabsTrigger className="h-7 px-3 text-xs" value="team"><Users className="mr-1.5 h-3.5 w-3.5" />团队</TabsTrigger><TabsTrigger className="h-7 px-3 text-xs" value="paper"><Library className="mr-1.5 h-3.5 w-3.5" />论文</TabsTrigger></TabsList>
           {view === "paper" && <div className="flex h-8 shrink-0 items-center rounded-md bg-muted/70 p-0.5" aria-label="论文关系模式"><button type="button" title="按共同作者与机构连接收藏论文" className={`h-7 rounded px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${paperRelationMode === "metadata" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`} onClick={() => selectPaperRelationMode("metadata")}><Users className="mr-1 inline h-3.5 w-3.5" />收藏关系</button><button type="button" title="查看直接参考文献与被引论文" className={`h-7 rounded px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${paperRelationMode === "citation" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`} onClick={() => selectPaperRelationMode("citation")}><Quote className="mr-1 inline h-3.5 w-3.5" />引用脉络</button><button type="button" title="按共同参考文献计算论文相似度" className={`h-7 rounded px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${paperRelationMode === "similarity" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`} onClick={() => selectPaperRelationMode("similarity")}><GitFork className="mr-1 inline h-3.5 w-3.5" />相似地图</button></div>}
           <div className="ml-auto flex min-w-0 items-center justify-end gap-2">

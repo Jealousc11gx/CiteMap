@@ -487,7 +487,7 @@ export function Papers() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-row items-center justify-between gap-3">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
         <div>
           <h1 className="workspace-heading">论文</h1>
           <p className="workspace-description">入库、检索、标注当前项目中的研究文献。</p>
@@ -517,7 +517,7 @@ export function Papers() {
       )}
 
       {/* Ingest Section */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <Card className="border-border/60">
           <CardContent className="space-y-3 p-4">
             <div className="flex items-center gap-2">
@@ -560,7 +560,7 @@ export function Papers() {
 
       {/* Search */}
       <Card className="border-border/60">
-        <CardContent className="flex gap-2 p-3">
+        <CardContent className="flex flex-col gap-2 p-3 sm:flex-row">
           <Input
             placeholder="搜索 arXiv 论文..."
             value={arxivSearchKeyword}
@@ -568,7 +568,7 @@ export function Papers() {
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
             className="h-9 text-sm"
           />
-          <Button onClick={handleSearch} variant="secondary" size="sm">
+          <Button onClick={handleSearch} variant="secondary" size="sm" className="sm:w-auto">
             <Search className="mr-1.5 h-4 w-4" />
             搜索
           </Button>
@@ -618,7 +618,7 @@ export function Papers() {
       {/* Library List */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex min-w-[32rem] flex-1 flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <Input
               placeholder="筛选已入库论文..."
               value={localFilter}
@@ -646,7 +646,7 @@ export function Papers() {
               <span>有 PDF {withPdf}</span>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">
             <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-muted-foreground">
               <span>模型</span>
               <select
@@ -714,7 +714,7 @@ export function Papers() {
                 onClick={() => navigate(`/papers/${paper.id}`)}
               >
                 <CardContent className="p-4">
-                  <div className="flex flex-row items-start justify-between gap-3">
+                  <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
                     <div className="min-w-0 flex-1">
                       <h3 className="text-sm font-medium line-clamp-2">{paper.title}</h3>
                       <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">

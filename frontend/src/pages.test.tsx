@@ -5,8 +5,10 @@ import React from 'react';
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
   useParams: () => ({}),
+  useSearchParams: () => [new URLSearchParams(), vi.fn()],
   Link: ({ children }: { children: React.ReactNode }) => children,
 }));
+vi.mock('next-themes', () => ({ useTheme: () => ({ theme: 'system', setTheme: vi.fn() }) }));
 
 // Mock UI components
 vi.mock('@/components/ui/button', () => ({ Button: ({ children }: { children: React.ReactNode }) => children }));
@@ -40,6 +42,7 @@ vi.mock('lucide-react', () => {
     'TrendingUp', 'ArrowRight', 'Zap', 'Plus', 'Moon', 'Sun', 'X',
     'LayoutDashboard', 'Folder', 'Pencil', 'ChevronRight', 'ChevronDown', 'Save',
     'Trash2',
+    'Compass', 'Clock3', 'GitBranch', 'Monitor', 'Eye', 'EyeOff', 'Cloud', 'Radar',
   ];
   const mocked: Record<string, any> = {};
   for (const name of icons) {
@@ -57,6 +60,19 @@ vi.mock('@/services/api', () => ({
   fetchGraphPaper: vi.fn(),
   fetchPaper: vi.fn(),
   createNoteTemplate: vi.fn(),
+  fetchExploreProfiles: vi.fn(),
+  fetchExploreCandidates: vi.fn(),
+  fetchExploreDigest: vi.fn(),
+  fetchExploreTrends: vi.fn(),
+  scanExplore: vi.fn(),
+  updateExploreTriage: vi.fn(),
+  fetchAppSettings: vi.fn(),
+  updateAppSettings: vi.fn(),
+  updateExploreProfile: vi.fn(),
+  fetchRadarConfig: vi.fn(),
+  updateRadarConfig: vi.fn(),
+  fetchRadarConnection: vi.fn(),
+  updateRadarConnection: vi.fn(),
 }));
 
 // Mock PixiGraph for lazy import in Graph page
@@ -97,5 +113,15 @@ describe('Pages smoke tests', () => {
   it('should render Papers page', async () => {
     const mod = await import('./pages/Papers');
     expect(typeof mod.Papers).toBe('function');
+  });
+
+  it('should render Explore page', async () => {
+    const mod = await import('./pages/Explore');
+    expect(typeof mod.Explore).toBe('function');
+  });
+
+  it('should render Settings page', async () => {
+    const mod = await import('./pages/Settings');
+    expect(typeof mod.Settings).toBe('function');
   });
 });

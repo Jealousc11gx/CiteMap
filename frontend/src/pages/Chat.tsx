@@ -46,15 +46,15 @@ function ThinkingIndicator() {
   return (
     <div className="flex items-center gap-1 py-1">
       <span
-        className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
+        className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/60"
         style={{ animationDelay: "0ms" }}
       />
       <span
-        className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
+        className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/60"
         style={{ animationDelay: "120ms" }}
       />
       <span
-        className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
+        className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/60"
         style={{ animationDelay: "240ms" }}
       />
     </div>
@@ -70,9 +70,9 @@ function ToolCallCard({ toolCall }: { toolCall: any }) {
     if (toolCall.status === "running" && !toolCall.result) {
       return (
         <div className="flex items-center gap-1.5 py-2 text-muted-foreground">
-          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "0ms" }} />
-          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "120ms" }} />
-          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "240ms" }} />
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/60" style={{ animationDelay: "0ms" }} />
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/60" style={{ animationDelay: "120ms" }} />
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/60" style={{ animationDelay: "240ms" }} />
           <span className="text-xs">思考中...</span>
         </div>
       );
@@ -606,7 +606,7 @@ export function Chat() {
   };
 
   const renderSidebar = () => (
-    <Card className="flex h-full min-h-0 w-60 shrink-0 flex-col overflow-hidden rounded-none border-0 border-r border-border bg-muted/20">
+    <Card className="flex h-36 min-h-0 w-full shrink-0 flex-col overflow-hidden rounded-none border-0 border-b border-border bg-muted/20 md:h-full md:w-60 md:border-b-0 md:border-r">
       <div className="border-b border-border/60 p-2.5">
         <Button onClick={handleNewSession} className="w-full gap-2" size="sm">
           <Plus className="h-4 w-4" />
@@ -633,7 +633,7 @@ export function Chat() {
                   e.stopPropagation();
                   handleRenameSession(session);
                 }}
-                className="opacity-0 transition-opacity group-hover:opacity-100"
+                className="rounded p-1 opacity-100 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
                 aria-label={`重命名会话：${session.title || "未命名会话"}`}
                 title="重命名"
               >
@@ -644,7 +644,7 @@ export function Chat() {
                   e.stopPropagation();
                   handleDeleteSession(session.id);
                 }}
-                className="opacity-0 transition-opacity group-hover:opacity-100"
+                className="rounded p-1 opacity-100 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
                 aria-label={`删除会话：${session.title || "未命名会话"}`}
                 title="删除"
               >
@@ -658,17 +658,17 @@ export function Chat() {
   );
 
   return (
-    <div className="flex h-[calc(100vh-9.5rem)] min-h-[600px] flex-col overflow-hidden">
+    <div className="flex h-[calc(100dvh-7.5rem)] min-h-[520px] flex-col overflow-hidden sm:h-[calc(100dvh-8.5rem)]">
       <div className="mb-3">
         <h1 className="workspace-heading">研究助手</h1>
         <p className="workspace-description">围绕当前项目检索、分析、整理论文。</p>
       </div>
 
-      <div className="relative flex min-h-0 flex-1 w-full gap-0 overflow-hidden rounded-lg border bg-card">
+      <div className="relative flex min-h-0 w-full flex-1 flex-col gap-0 overflow-hidden rounded-lg border bg-card md:flex-row">
         {renderSidebar()}
 
         <Card className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-none border-0">
-          <div ref={messagesContainerRef} className="min-h-0 flex-1 overflow-y-auto p-4">
+          <div ref={messagesContainerRef} className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
             {messages.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
                 <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
@@ -686,7 +686,7 @@ export function Chat() {
             )}
           </div>
 
-          <div className="border-t border-border/60 p-4">
+          <div className="border-t border-border/60 p-3 sm:p-4">
             <div className="mx-auto flex w-full max-w-4xl gap-2">
               <Textarea
                 ref={inputRef}

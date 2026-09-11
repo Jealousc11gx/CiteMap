@@ -156,7 +156,7 @@ export function PaperDetail() {
             <Skeleton className="h-4 w-1/2" />
           </CardContent>
         </Card>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <Card className="border-border/60">
             <CardContent className="p-6">
               <Skeleton className="h-24 w-full" />
@@ -265,7 +265,7 @@ export function PaperDetail() {
           ))}
         </div>
 
-        <h1 className="max-w-[28ch] text-3xl font-semibold leading-snug tracking-tight">
+          <h1 className="max-w-[28ch] text-xl font-semibold leading-snug sm:text-3xl">
           {paper.title}
         </h1>
 
@@ -383,7 +383,7 @@ export function PaperDetail() {
       )}
 
       {/* Authors & Teams */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         {paper.authors && paper.authors.length > 0 && (
           <Card className="border-border/60">
             <CardHeader className="pb-3">

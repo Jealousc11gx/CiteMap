@@ -138,7 +138,7 @@ export function Dashboard() {
         </div>
       )}
 
-      <div className="flex items-end justify-between gap-6">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-end sm:gap-6">
         <div>
           <h1 className="workspace-heading">{activeProject?.name || "项目"}</h1>
           <p className="workspace-description">继续最近的研究，处理仍需整理的论文。</p>
@@ -161,8 +161,8 @@ export function Dashboard() {
       {loading ? (
         <div className="space-y-4">
           <Skeleton className="h-16 w-full" />
-          <div className="grid grid-cols-3 gap-4">
-            <Skeleton className="col-span-2 h-72 w-full" />
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Skeleton className="h-72 w-full lg:col-span-2" />
             <Skeleton className="h-72 w-full" />
           </div>
           <Skeleton className="h-72 w-full" />
@@ -171,22 +171,22 @@ export function Dashboard() {
         <EmptyState onAction={() => navigate("/papers")} />
       ) : (
         <>
-          <div className="flex items-center divide-x overflow-hidden rounded-lg border bg-card">
+          <div className="grid grid-cols-2 overflow-hidden rounded-lg border bg-card sm:grid-cols-4 sm:divide-x">
             {[
               { label: "论文", value: papers.length },
               { label: "已标注", value: annotated },
               { label: "有笔记", value: withNotes },
               { label: "有 PDF", value: withPdf },
             ].map((item) => (
-              <div key={item.label} className="flex min-w-0 flex-1 items-baseline gap-2 px-4 py-3">
+              <div key={item.label} className="flex min-w-0 items-baseline gap-2 border-b px-4 py-3 last:border-b-0 even:border-l sm:border-b-0 sm:border-l-0">
                 <span className="font-mono text-lg font-semibold">{item.value}</span>
                 <span className="text-xs text-muted-foreground">{item.label}</span>
               </div>
             ))}
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
-            <Card className="col-span-2 border-border/60">
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Card className="border-border/60 lg:col-span-2">
               <CardHeader className="flex flex-row items-center justify-between pb-2 pt-4">
                 <CardTitle className="flex items-center gap-2 text-sm font-semibold">
                   <BookOpen className="h-4 w-4 text-primary" />

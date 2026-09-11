@@ -47,6 +47,30 @@ def test_radar_config_api_and_system_project_guard(project_client):
     assert blocked.json()["detail"] == "未分类项目不能启用论文雷达，请新建研究项目后再配置雷达"
 
 
+def test_radar_connection_token_can_be_replaced_and_cleared(project_client):
+    saved = project_client.put(
+        "/api/radar/connection",
+        json={"remote_url": "https://radar.example.com", "token": "first-token"},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["token_configured"] is True
+    assert "first-token" not in str(saved.json())
+
+    replaced = project_client.put(
+        "/api/radar/connection",
+        json={"remote_url": "https://radar.example.com", "token": "next-token"},
+    )
+    assert replaced.status_code == 200
+    assert replaced.json()["token_configured"] is True
+
+    cleared = project_client.put(
+        "/api/radar/connection",
+        json={"remote_url": "https://radar.example.com", "clear_token": True},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["token_configured"] is False
+
+
 def test_radar_matches_api_state_and_save(project_client, monkeypatch):
     created = project_client.post("/api/projects", json={"name": "Radar Match API"})
     project_id = created.json()["id"]

@@ -200,3 +200,130 @@ export interface RadarMatch {
   result?: string | null;
   limitations?: string | null;
 }
+
+export type ExploreTriageStatus = "unreviewed" | "read" | "later" | "ignored" | "project";
+
+export interface ExploreProfile {
+  id: string;
+  name: string;
+  description: string;
+  categories: string[];
+  include_keywords: string[];
+  exclude_keywords: string[];
+  enabled: boolean;
+  updated_at?: string;
+}
+
+export interface AppSettings {
+  values: Record<string, string>;
+  secrets: Record<string, boolean>;
+}
+
+export interface RadarConnection {
+  remote_url: string;
+  token_configured: boolean;
+  updated_at?: string | null;
+}
+
+export interface ExploreSource {
+  source: string;
+  source_rank?: number | null;
+  first_seen_at?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExploreCandidate {
+  id: string;
+  arxiv_id: string;
+  title: string;
+  abstract: string;
+  authors: string[];
+  categories: string[];
+  published_date?: string | null;
+  updated_date?: string | null;
+  arxiv_url: string;
+  pdf_url?: string | null;
+  code_url?: string | null;
+  code_meta?: Record<string, unknown>;
+  topic?: string | null;
+  topic_bucket?: string | null;
+  heat_score: number;
+  ranking_score: number;
+  relevance_score?: number | null;
+  topic_relevance_score?: number | null;
+  practicality_score?: number | null;
+  relevance_breakdown: Record<string, unknown>;
+  judge_reason?: string | null;
+  judge_reason_en?: string | null;
+  gate_status: string;
+  judge_status: string;
+  summary_status: string;
+  triage_status: ExploreTriageStatus;
+  discovered_at?: string;
+  sources: ExploreSource[];
+  watched_author: boolean;
+  title_zh?: string | null;
+  abstract_zh?: string | null;
+  summary_zh?: string | null;
+  summary_en?: string | null;
+  highlights_zh: string[];
+  highlights_en: string[];
+  related_methods_zh: Array<{ name: string; relation: string; arxiv_id?: string | null }>;
+  related_methods_en: Array<{ name: string; relation: string; arxiv_id?: string | null }>;
+}
+
+export interface ExploreDigestBucket {
+  id: string;
+  title: string;
+  cap: number;
+  papers: ExploreCandidate[];
+}
+
+export interface ExploreDigest {
+  profile_id: string;
+  digest_date: string;
+  period: string;
+  summary: string;
+  scanned_count: number;
+  surviving_count: number;
+  highlighted_count: number;
+  watched: ExploreCandidate[];
+  buckets: ExploreDigestBucket[];
+  topic_counts: Record<string, number>;
+  source_counts: Record<string, number>;
+  spotlight: ExploreCandidate[];
+  generated_at: string;
+}
+
+export interface ExploreTrends {
+  profile_id: string;
+  days: number;
+  series: Record<string, Record<string, number>>;
+  topics: Record<string, number>;
+}
+
+export interface ExploreRollup {
+  profile_id: string;
+  period: string;
+  start_date: string;
+  end_date: string;
+  require_complete: boolean;
+  missing_days: string[];
+  papers: ExploreCandidate[];
+  buckets: Array<{ id: string; title: string; papers: ExploreCandidate[] }>;
+  paper_count: number;
+}
+
+export interface VenueTrendRunSummary {
+  id: string;
+  venue: string;
+  model: string;
+  accepted_count: number;
+  in_scope_count: number;
+  created_at: string;
+}
+
+export interface VenueTrendRun extends VenueTrendRunSummary {
+  groups: Record<string, Array<Record<string, unknown>>>;
+  report: Record<string, unknown>;
+}

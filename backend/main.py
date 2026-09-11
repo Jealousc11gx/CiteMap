@@ -12,7 +12,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from paper_graph.database import (
     DEFAULT_PROJECT_ID,
@@ -47,6 +47,22 @@ from paper_graph.radar import (
 from paper_graph.radar_embeddings import get_embedding_provider
 from paper_graph.radar_sync import RadarRemoteClient, flush_pending_operations, sync_remote_changes
 from paper_graph.radar_connection import get_radar_connection, load_radar_credentials, save_radar_connection
+from paper_graph.explore import (
+    analyze_explore_candidate,
+    analyze_pending_explore_candidates,
+    get_explore_candidate,
+    get_explore_digest,
+    get_explore_profile,
+    get_explore_rollup,
+    get_explore_trends,
+    list_explore_candidates,
+    list_explore_profiles,
+    scan_explore,
+    transition_explore_triage,
+    update_explore_profile,
+)
+from paper_graph.settings import get_app_settings, update_app_settings
+from paper_graph.venue_trend import get_venue_trend_run, list_venue_trend_runs, run_venue_trend
 from paper_graph.ingest import ingest_local_pdf, ingest_arxiv_id, search_arxiv, search_arxiv_only, _download_arxiv_pdf
 from paper_graph.annotate import annotate_paper, annotate_all, get_default_model, get_client, AnnotationError
 from paper_graph.graph import build_paper_graph, build_team_ego_graph, build_team_graph
@@ -188,6 +204,52 @@ class RadarSyncRequest(BaseModel):
 class RadarConnectionRequest(BaseModel):
     remote_url: str
     token: Optional[str] = None
+    clear_token: bool = False
+
+
+class ExploreScanRequest(BaseModel):
+    max_results: int = 100
+
+
+class ExploreProfileRequest(BaseModel):
+    name: str
+    description: str = ""
+    categories: list[str]
+    include_keywords: list[str] = Field(default_factory=list)
+    exclude_keywords: list[str] = Field(default_factory=list)
+    enabled: bool = True
+
+
+class ExploreAnalyzeRequest(BaseModel):
+    force: bool = False
+
+
+class ExploreBatchAnalyzeRequest(BaseModel):
+    limit: int = 20
+
+
+class VenueTrendRequest(BaseModel):
+    venue: str
+    max_pages: int = 20
+    min_accepted: int = 20
+    model: Optional[str] = None
+
+
+class ExploreTriageRequest(BaseModel):
+    status: str
+    project_id: Optional[str] = None
+    download_pdf: bool = False
+
+
+class AppSettingsRequest(BaseModel):
+    values: dict[str, str | int | bool] = Field(default_factory=dict)
+    secrets: dict[str, str] = Field(default_factory=dict)
+    clear_secrets: list[str] = Field(default_factory=list)
+
+
+class RadarSavedSyncRequest(BaseModel):
+    publish_profile: bool = True
+    force_publish_profile: bool = False
 
 
 class ChatMessageResponse(BaseModel):
@@ -336,6 +398,284 @@ def api_remove_paper_from_project(project_id: str, paper_id: str):
 
 
 # ──────────────────────────────
+# 统一设置 API
+# ──────────────────────────────
+
+@app.get("/api/settings")
+def api_get_settings():
+    return get_app_settings(ENV_PATH)
+
+
+@app.put("/api/settings")
+def api_update_settings(req: AppSettingsRequest):
+    try:
+        return update_app_settings(
+            ENV_PATH,
+            req.values,
+            req.secrets,
+            req.clear_secrets,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+# ──────────────────────────────
+# 独立探索 API
+# ──────────────────────────────
+
+@app.get("/api/explore/profiles")
+def api_list_explore_profiles():
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        return list_explore_profiles(conn)
+    finally:
+        conn.close()
+
+
+@app.put("/api/explore/profiles/{profile_id}")
+def api_update_explore_profile(profile_id: str, req: ExploreProfileRequest):
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        return update_explore_profile(
+            conn,
+            profile_id,
+            name=req.name,
+            description=req.description,
+            categories=req.categories,
+            include_keywords=req.include_keywords,
+            exclude_keywords=req.exclude_keywords,
+            enabled=req.enabled,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        conn.close()
+
+
+@app.get("/api/explore/candidates")
+def api_list_explore_candidates(
+    profile_id: str = "explore_default",
+    source: Optional[str] = None,
+    topic: Optional[str] = None,
+    triage_status: Optional[str] = None,
+    q: Optional[str] = None,
+    limit: int = 100,
+):
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="探索候选数量必须在 1 到 500 之间")
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        return list_explore_candidates(
+            conn,
+            profile_id,
+            source=source,
+            topic=topic,
+            triage_status=triage_status,
+            query=q,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        conn.close()
+
+
+@app.get("/api/explore/digest")
+def api_get_explore_digest(profile_id: str = "explore_default", digest_date: Optional[str] = None):
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        return get_explore_digest(conn, profile_id, digest_date)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        conn.close()
+
+
+@app.get("/api/explore/trends")
+def api_get_explore_trends(profile_id: str = "explore_default", days: int = 30):
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        return get_explore_trends(conn, profile_id, days)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        conn.close()
+
+
+@app.get("/api/explore/rollup")
+def api_get_explore_rollup(
+    profile_id: str = "explore_default",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    require_complete: bool = False,
+):
+    if not start_date or not end_date:
+        raise HTTPException(status_code=400, detail="rollup 必须提供 start_date 和 end_date")
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        return get_explore_rollup(
+            conn,
+            profile_id,
+            start_date=start_date,
+            end_date=end_date,
+            require_complete=require_complete,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        conn.close()
+
+
+@app.post("/api/explore/scan")
+def api_scan_explore(req: ExploreScanRequest, profile_id: str = "explore_default"):
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        return scan_explore(conn, profile_id, max_results=req.max_results)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail={"code": "EXPLORE_SCAN_FAILED", "error": str(exc)})
+    finally:
+        conn.close()
+
+
+@app.post("/api/explore/candidates/{candidate_id}/analyze")
+def api_analyze_explore_candidate(
+    candidate_id: str,
+    req: ExploreAnalyzeRequest,
+    profile_id: str = "explore_default",
+):
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        return analyze_explore_candidate(
+            conn,
+            profile_id,
+            candidate_id,
+            force=req.force,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        code = getattr(exc, "code", "EXPLORE_ANALYSIS_FAILED")
+        raise HTTPException(
+            status_code=503,
+            detail={"code": code, "error": str(exc)},
+        )
+    finally:
+        conn.close()
+
+
+@app.post("/api/explore/analyze-pending")
+def api_analyze_pending_explore_candidates(
+    req: ExploreBatchAnalyzeRequest,
+    profile_id: str = "explore_default",
+):
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        return analyze_pending_explore_candidates(
+            conn,
+            profile_id,
+            limit=req.limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        conn.close()
+
+
+@app.get("/api/explore/venue-trends")
+def api_list_venue_trends(limit: int = 20):
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        return list_venue_trend_runs(conn, limit)
+    finally:
+        conn.close()
+
+
+@app.get("/api/explore/venue-trends/{run_id}")
+def api_get_venue_trend(run_id: str):
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        return get_venue_trend_run(conn, run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    finally:
+        conn.close()
+
+
+@app.post("/api/explore/venue-trends")
+def api_run_venue_trend(req: VenueTrendRequest):
+    if req.max_pages < 1 or req.max_pages > 100:
+        raise HTTPException(status_code=400, detail="venue trend max_pages 必须在 1 到 100 之间")
+    if req.min_accepted < 1 or req.min_accepted > 1000:
+        raise HTTPException(status_code=400, detail="venue trend min_accepted 必须在 1 到 1000 之间")
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        return run_venue_trend(
+            conn,
+            req.venue,
+            max_pages=req.max_pages,
+            min_accepted=req.min_accepted,
+            model=req.model,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "VENUE_TREND_FAILED", "error": str(exc)},
+        )
+    finally:
+        conn.close()
+
+
+@app.patch("/api/explore/candidates/{candidate_id}")
+def api_update_explore_candidate(candidate_id: str, req: ExploreTriageRequest, profile_id: str = "explore_default"):
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        candidate = get_explore_candidate(conn, profile_id, candidate_id)
+        paper_id = None
+        if req.status == "project":
+            if not req.project_id:
+                raise HTTPException(status_code=400, detail="加入项目时必须提供 project_id")
+            project = _require_project(req.project_id)
+            if project["is_system"]:
+                raise HTTPException(status_code=400, detail="未分类不能作为探索论文的目标项目")
+            paper_id = ingest_arxiv_id(
+                candidate["arxiv_id"],
+                DB_PATH,
+                download_pdf=req.download_pdf,
+                pdf_dir=DATA_DIR / "pdfs",
+            )
+            add_paper_to_project(conn, req.project_id, paper_id)
+        result = transition_explore_triage(conn, profile_id, candidate_id, req.status)
+        if paper_id:
+            result["paper_id"] = paper_id
+        return result
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        conn.close()
+
+
+# ──────────────────────────────
 # 论文雷达 API
 # ──────────────────────────────
 
@@ -354,9 +694,14 @@ def api_update_radar_connection(req: RadarConnectionRequest):
     init_db(DB_PATH)
     conn = get_connection(DB_PATH)
     try:
-        return save_radar_connection(conn, req.remote_url, req.token)
+        return save_radar_connection(
+            conn,
+            req.remote_url,
+            req.token,
+            clear_token=req.clear_token,
+        )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc))
     finally:
         conn.close()
 
@@ -539,12 +884,31 @@ def api_sync_radar(req: RadarSyncRequest, project_id: Optional[str] = None):
             "published": published,
             "profile_forced": req.force_publish_profile,
         }
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail={"code": "RADAR_SYNC_FAILED", "error": str(exc)})
     finally:
         conn.close()
+
+
+@app.post("/api/radar/sync-saved")
+def api_sync_radar_saved(req: RadarSavedSyncRequest, project_id: Optional[str] = None):
+    init_db(DB_PATH)
+    conn = get_connection(DB_PATH)
+    try:
+        remote_url, token = load_radar_credentials(conn)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        conn.close()
+    return api_sync_radar(
+        RadarSyncRequest(
+            remote_url=remote_url,
+            token=token,
+            publish_profile=req.publish_profile,
+            force_publish_profile=req.force_publish_profile,
+        ),
+        project_id,
+    )
 
 @app.get("/api/papers/search")
 def api_search_arxiv(q: str, max_results: int = 10, download: bool = False, project_id: Optional[str] = None):

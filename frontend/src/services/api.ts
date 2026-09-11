@@ -1,4 +1,23 @@
-import type { Paper, NoteItem, ChatMessage, ChatSession, Project, RadarConfig, RadarMatch, RadarState } from "@/types";
+import type {
+  Paper,
+  NoteItem,
+  ChatMessage,
+  ChatSession,
+  Project,
+  RadarConfig,
+  RadarMatch,
+  RadarState,
+  ExploreCandidate,
+  ExploreDigest,
+  ExploreProfile,
+  ExploreTriageStatus,
+  ExploreTrends,
+  ExploreRollup,
+  VenueTrendRun,
+  VenueTrendRunSummary,
+  AppSettings,
+  RadarConnection,
+} from "@/types";
 
 const API_BASE = "/api";
 
@@ -58,6 +77,233 @@ export async function syncRadar(projectId: string | undefined, remoteUrl: string
     body: JSON.stringify({ remote_url: remoteUrl, token, publish_profile: publishProfile, force_publish_profile: forcePublishProfile }),
   });
   if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail?.error || "Failed to sync radar");
+  return res.json();
+}
+
+export async function fetchRadarConnection(): Promise<RadarConnection> {
+  const res = await fetch(`${API_BASE}/radar/connection`);
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || "Failed to fetch radar connection");
+  return res.json();
+}
+
+export async function updateRadarConnection(remoteUrl: string, token?: string, clearToken = false): Promise<RadarConnection> {
+  const res = await fetch(`${API_BASE}/radar/connection`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ remote_url: remoteUrl, token: token || null, clear_token: clearToken }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || "Failed to update radar connection");
+  return res.json();
+}
+
+export async function syncRadarSaved(
+  projectId?: string,
+  forcePublishProfile = false,
+  publishProfile = true,
+): Promise<{ flushed: unknown; synced: { applied?: number }; published: number; profile_forced: boolean }> {
+  const params = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+  const res = await fetch(`${API_BASE}/radar/sync-saved${params}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ publish_profile: publishProfile, force_publish_profile: forcePublishProfile }),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => null))?.detail;
+    throw new Error(typeof detail === "object" ? detail.error || "Radar sync failed" : detail || "Radar sync failed");
+  }
+  return res.json();
+}
+
+export async function fetchAppSettings(): Promise<AppSettings> {
+  const res = await fetch(`${API_BASE}/settings`);
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || "Failed to fetch settings");
+  return res.json();
+}
+
+export async function updateAppSettings(payload: {
+  values?: Record<string, string | number | boolean>;
+  secrets?: Record<string, string>;
+  clear_secrets?: string[];
+}): Promise<AppSettings> {
+  const res = await fetch(`${API_BASE}/settings`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || "Failed to update settings");
+  return res.json();
+}
+
+export async function fetchExploreProfiles(): Promise<ExploreProfile[]> {
+  const res = await fetch(`${API_BASE}/explore/profiles`);
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || "Failed to fetch explore profiles");
+  return res.json();
+}
+
+export async function updateExploreProfile(profile: ExploreProfile): Promise<ExploreProfile> {
+  const res = await fetch(`${API_BASE}/explore/profiles/${encodeURIComponent(profile.id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: profile.name,
+      description: profile.description,
+      categories: profile.categories,
+      include_keywords: profile.include_keywords,
+      exclude_keywords: profile.exclude_keywords,
+      enabled: profile.enabled,
+    }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || "Failed to update explore profile");
+  return res.json();
+}
+
+export async function fetchExploreCandidates(options: {
+  profileId?: string;
+  source?: string;
+  topic?: string;
+  triageStatus?: ExploreTriageStatus;
+  query?: string;
+  limit?: number;
+} = {}): Promise<ExploreCandidate[]> {
+  const params = new URLSearchParams({ profile_id: options.profileId || "explore_default" });
+  if (options.source && options.source !== "all") params.set("source", options.source);
+  if (options.topic && options.topic !== "all") params.set("topic", options.topic);
+  if (options.triageStatus) params.set("triage_status", options.triageStatus);
+  if (options.query) params.set("q", options.query);
+  params.set("limit", String(options.limit || 100));
+  const res = await fetch(`${API_BASE}/explore/candidates?${params}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || "Failed to fetch explore candidates");
+  return res.json();
+}
+
+export async function fetchExploreDigest(profileId = "explore_default", digestDate?: string): Promise<ExploreDigest> {
+  const params = new URLSearchParams({ profile_id: profileId });
+  if (digestDate) params.set("digest_date", digestDate);
+  const res = await fetch(`${API_BASE}/explore/digest?${params}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || "Failed to fetch explore digest");
+  return res.json();
+}
+
+export async function fetchExploreTrends(profileId = "explore_default", days = 30): Promise<ExploreTrends> {
+  const res = await fetch(`${API_BASE}/explore/trends?profile_id=${encodeURIComponent(profileId)}&days=${days}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || "Failed to fetch explore trends");
+  return res.json();
+}
+
+export async function fetchExploreRollup(
+  startDate: string,
+  endDate: string,
+  profileId = "explore_default",
+  requireComplete = false,
+): Promise<ExploreRollup> {
+  const params = new URLSearchParams({
+    profile_id: profileId,
+    start_date: startDate,
+    end_date: endDate,
+    require_complete: String(requireComplete),
+  });
+  const res = await fetch(`${API_BASE}/explore/rollup?${params}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || "Failed to fetch explore rollup");
+  return res.json();
+}
+
+export async function fetchVenueTrendRuns(limit = 20): Promise<VenueTrendRunSummary[]> {
+  const res = await fetch(`${API_BASE}/explore/venue-trends?limit=${limit}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || "Failed to fetch venue trends");
+  return res.json();
+}
+
+export async function fetchVenueTrendRun(runId: string): Promise<VenueTrendRun> {
+  const res = await fetch(`${API_BASE}/explore/venue-trends/${encodeURIComponent(runId)}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || "Failed to fetch venue trend");
+  return res.json();
+}
+
+export async function runVenueTrend(venue: string, maxPages = 20, model?: string, minAccepted = 20): Promise<VenueTrendRun> {
+  const res = await fetch(`${API_BASE}/explore/venue-trends`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ venue, max_pages: maxPages, min_accepted: minAccepted, model }),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => null))?.detail;
+    throw new Error(typeof detail === "object" ? detail.error || "Venue trend failed" : detail || "Venue trend failed");
+  }
+  return res.json();
+}
+
+export async function scanExplore(profileId = "explore_default", maxResults = 100): Promise<{ profile_id: string; status: string; candidate_count: number; stored_count: number }> {
+  const res = await fetch(`${API_BASE}/explore/scan?profile_id=${encodeURIComponent(profileId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ max_results: maxResults }),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => null))?.detail;
+    throw new Error(typeof detail === "object" ? detail.error || "Explore scan failed" : detail || "Explore scan failed");
+  }
+  return res.json();
+}
+
+export async function analyzeExploreCandidate(
+  candidateId: string,
+  profileId = "explore_default",
+  force = false,
+): Promise<ExploreCandidate> {
+  const res = await fetch(
+    `${API_BASE}/explore/candidates/${encodeURIComponent(candidateId)}/analyze?profile_id=${encodeURIComponent(profileId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force }),
+    },
+  );
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => null))?.detail;
+    throw new Error(typeof detail === "object" ? detail.error || "Explore analysis failed" : detail || "Explore analysis failed");
+  }
+  return res.json();
+}
+
+export async function analyzePendingExplore(
+  profileId = "explore_default",
+  limit = 20,
+): Promise<{
+  requested: number;
+  completed: number;
+  rejected: number;
+  failed: number;
+  summary_failed: number;
+  remaining: number;
+}> {
+  const res = await fetch(
+    `${API_BASE}/explore/analyze-pending?profile_id=${encodeURIComponent(profileId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ limit }),
+    },
+  );
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => null))?.detail;
+    throw new Error(typeof detail === "object" ? detail.error || "Explore batch analysis failed" : detail || "Explore batch analysis failed");
+  }
+  return res.json();
+}
+
+export async function updateExploreTriage(
+  candidateId: string,
+  status: ExploreTriageStatus,
+  projectId?: string,
+  downloadPdf = false,
+  profileId = "explore_default",
+): Promise<ExploreCandidate & { paper_id?: string }> {
+  const res = await fetch(`${API_BASE}/explore/candidates/${encodeURIComponent(candidateId)}?profile_id=${encodeURIComponent(profileId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status, project_id: projectId, download_pdf: downloadPdf }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || "Failed to update explore candidate");
   return res.json();
 }
 

@@ -375,6 +375,207 @@ def init_db(db_path: Optional[Path] = None) -> None:
         )
     """)
 
+    # 独立探索：不依赖 project_id，不写入正式 papers 表。
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS explore_profiles (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            categories TEXT NOT NULL DEFAULT '[]',
+            include_keywords TEXT NOT NULL DEFAULT '[]',
+            exclude_keywords TEXT NOT NULL DEFAULT '[]',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS explore_candidates (
+            id TEXT PRIMARY KEY,
+            arxiv_id TEXT NOT NULL UNIQUE,
+            title TEXT NOT NULL DEFAULT '',
+            abstract TEXT NOT NULL DEFAULT '',
+            authors TEXT NOT NULL DEFAULT '[]',
+            categories TEXT NOT NULL DEFAULT '[]',
+            published_date TEXT,
+            updated_date TEXT,
+            arxiv_url TEXT NOT NULL DEFAULT '',
+            pdf_url TEXT,
+            code_url TEXT,
+            code_meta TEXT NOT NULL DEFAULT '{}',
+            title_zh TEXT,
+            abstract_zh TEXT,
+            summary_zh TEXT,
+            summary_en TEXT,
+            highlights_zh TEXT NOT NULL DEFAULT '[]',
+            highlights_en TEXT NOT NULL DEFAULT '[]',
+            related_methods_zh TEXT NOT NULL DEFAULT '[]',
+            related_methods_en TEXT NOT NULL DEFAULT '[]',
+            topic TEXT,
+            heat_score REAL NOT NULL DEFAULT 0,
+            judge_reason TEXT NOT NULL DEFAULT '',
+            first_seen_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS explore_candidate_sources (
+            candidate_id TEXT NOT NULL,
+            source TEXT NOT NULL,
+            source_rank INTEGER,
+            first_seen_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            metadata TEXT NOT NULL DEFAULT '{}',
+            PRIMARY KEY (candidate_id, source),
+            FOREIGN KEY (candidate_id) REFERENCES explore_candidates(id) ON DELETE CASCADE
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS explore_profile_candidates (
+            profile_id TEXT NOT NULL,
+            candidate_id TEXT NOT NULL,
+            gate_status TEXT NOT NULL DEFAULT 'prefilter_passed',
+            judge_status TEXT NOT NULL DEFAULT 'pending',
+            summary_status TEXT NOT NULL DEFAULT 'pending',
+            judge_score REAL,
+            topic_relevance_score REAL,
+            practicality_score REAL,
+            topic_bucket TEXT,
+            relevance_breakdown TEXT NOT NULL DEFAULT '{}',
+            judge_reason TEXT NOT NULL DEFAULT '',
+            judge_reason_en TEXT,
+            analysis_updated_at TEXT,
+            triage_status TEXT NOT NULL DEFAULT 'unreviewed'
+                CHECK (triage_status IN ('unreviewed', 'read', 'later', 'ignored', 'project')),
+            discovered_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (profile_id, candidate_id),
+            FOREIGN KEY (profile_id) REFERENCES explore_profiles(id) ON DELETE CASCADE,
+            FOREIGN KEY (candidate_id) REFERENCES explore_candidates(id) ON DELETE CASCADE
+        )
+    """)
+    explore_candidate_columns = {
+        row[1] for row in cur.execute("PRAGMA table_info(explore_candidates)").fetchall()
+    }
+    for column, definition in {
+        "code_url": "TEXT",
+        "code_meta": "TEXT NOT NULL DEFAULT '{}'",
+        "summary_zh": "TEXT",
+        "summary_en": "TEXT",
+        "highlights_zh": "TEXT NOT NULL DEFAULT '[]'",
+        "highlights_en": "TEXT NOT NULL DEFAULT '[]'",
+        "related_methods_zh": "TEXT NOT NULL DEFAULT '[]'",
+        "related_methods_en": "TEXT NOT NULL DEFAULT '[]'",
+    }.items():
+        if column not in explore_candidate_columns:
+            cur.execute(f"ALTER TABLE explore_candidates ADD COLUMN {column} {definition}")
+    explore_profile_candidate_columns = {
+        row[1] for row in cur.execute("PRAGMA table_info(explore_profile_candidates)").fetchall()
+    }
+    for column, definition in {
+        "summary_status": "TEXT NOT NULL DEFAULT 'pending'",
+        "judge_score": "REAL",
+        "topic_relevance_score": "REAL",
+        "practicality_score": "REAL",
+        "topic_bucket": "TEXT",
+        "relevance_breakdown": "TEXT NOT NULL DEFAULT '{}'",
+        "judge_reason": "TEXT NOT NULL DEFAULT ''",
+        "judge_reason_en": "TEXT",
+        "analysis_updated_at": "TEXT",
+    }.items():
+        if column not in explore_profile_candidate_columns:
+            cur.execute(f"ALTER TABLE explore_profile_candidates ADD COLUMN {column} {definition}")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS explore_digests (
+            id TEXT PRIMARY KEY,
+            profile_id TEXT NOT NULL,
+            digest_date TEXT NOT NULL,
+            period TEXT NOT NULL DEFAULT 'daily',
+            summary TEXT NOT NULL DEFAULT '',
+            topic_counts TEXT NOT NULL DEFAULT '{}',
+            source_counts TEXT NOT NULL DEFAULT '{}',
+            spotlight_ids TEXT NOT NULL DEFAULT '[]',
+            generated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(profile_id, digest_date, period),
+            FOREIGN KEY (profile_id) REFERENCES explore_profiles(id) ON DELETE CASCADE
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS explore_milestone_surfaces (
+            profile_id TEXT NOT NULL,
+            candidate_id TEXT NOT NULL,
+            surfaced_on TEXT NOT NULL,
+            PRIMARY KEY (profile_id, candidate_id, surfaced_on),
+            FOREIGN KEY (profile_id) REFERENCES explore_profiles(id) ON DELETE CASCADE,
+            FOREIGN KEY (candidate_id) REFERENCES explore_candidates(id) ON DELETE CASCADE
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_explore_candidates_published ON explore_candidates(published_date)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_explore_profile_candidates_status ON explore_profile_candidates(profile_id, triage_status)")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS explore_discoveries (
+            profile_id TEXT NOT NULL,
+            candidate_id TEXT NOT NULL,
+            source TEXT NOT NULL,
+            discovered_on TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (profile_id, candidate_id, source, discovered_on),
+            FOREIGN KEY (profile_id) REFERENCES explore_profiles(id) ON DELETE CASCADE,
+            FOREIGN KEY (candidate_id) REFERENCES explore_candidates(id) ON DELETE CASCADE
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_explore_discoveries_day ON explore_discoveries(profile_id, discovered_on)")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS explore_venue_trend_runs (
+            id TEXT PRIMARY KEY,
+            venue TEXT NOT NULL,
+            model TEXT NOT NULL,
+            accepted_count INTEGER NOT NULL DEFAULT 0,
+            in_scope_count INTEGER NOT NULL DEFAULT 0,
+            result TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO explore_profiles
+            (id, name, description, categories, include_keywords)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            "explore_default",
+            "LLM Inference Optimization",
+            "独立于项目的 LLM 推理优化论文探索主题",
+            json.dumps(["cs.CL", "cs.LG", "cs.AR"], ensure_ascii=False),
+            "[]",
+        ),
+    )
+    cur.execute(
+        """
+        UPDATE explore_profiles
+        SET include_keywords = '[]', updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND include_keywords = ?
+        """,
+        (
+            "explore_default",
+            json.dumps(
+                ["quantization", "kv cache", "serving", "inference"],
+                ensure_ascii=False,
+            ),
+        ),
+    )
+    cur.execute(
+        """
+        UPDATE explore_profiles
+        SET categories = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND categories = ?
+        """,
+        (
+            json.dumps(["cs.CL", "cs.LG", "cs.AR"], ensure_ascii=False),
+            "explore_default",
+            json.dumps(["cs.AI", "cs.LG", "cs.CL"], ensure_ascii=False),
+        ),
+    )
+
     # 聊天会话与消息历史
     cur.execute("""
         CREATE TABLE IF NOT EXISTS chat_sessions (

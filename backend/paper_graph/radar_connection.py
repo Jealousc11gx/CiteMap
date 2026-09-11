@@ -50,15 +50,17 @@ def save_radar_connection(
     conn: sqlite3.Connection,
     remote_url: str,
     token: Optional[str] = None,
+    *,
+    clear_token: bool = False,
 ) -> dict:
-    """保存全局 Worker 连接；token 留空时保留原值。"""
+    """保存全局 Worker 连接；token 留空时保留原值，可显式清除 token。"""
     _ensure_table(conn)
     normalized_url = _normalize_remote_url(remote_url)
     existing = conn.execute(
         "SELECT token FROM radar_connection WHERE id = 1"
     ).fetchone()
-    next_token = token.strip() if token and token.strip() else (existing["token"] if existing else "")
-    if not next_token:
+    next_token = "" if clear_token else (token.strip() if token and token.strip() else (existing["token"] if existing else ""))
+    if not next_token and not clear_token:
         raise ValueError("首次连接 Worker 时必须填写 RADAR_TOKEN")
     conn.execute(
         """

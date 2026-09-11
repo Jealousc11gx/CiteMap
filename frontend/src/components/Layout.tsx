@@ -24,11 +24,15 @@ import {
   Waypoints,
   FolderKanban,
   Radar as RadarIcon,
+  Compass,
+  Settings,
   ChevronDown,
   Check,
   Plus,
   Pencil,
   Trash2,
+  Menu,
+  X,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -37,6 +41,7 @@ const NAV_ITEMS = [
   { path: "/graph", label: "图谱", icon: Network },
   { path: "/chat", label: "助手", icon: MessageSquareText },
   { path: "/notes", label: "笔记", icon: NotebookPen },
+  { path: "/explore", label: "探索", icon: Compass },
   { path: "/radar", label: "雷达", icon: RadarIcon },
 ];
 
@@ -44,27 +49,18 @@ function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) {
-    return (
-      <Button variant="ghost" size="icon" className="h-8 w-8">
-        <Sun className="h-4 w-4" />
-      </Button>
-    );
-  }
+  useEffect(() => setMounted(true), []);
 
   return (
     <Button
       variant="ghost"
       size="icon"
-      className="h-8 w-8 border border-sidebar-border bg-sidebar hover:bg-sidebar-accent"
-      onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+      className="h-8 w-8 shrink-0 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+      onClick={() => mounted && setTheme(resolvedTheme === "dark" ? "light" : "dark")}
       aria-label={resolvedTheme === "dark" ? "切换到浅色模式" : "切换到深色模式"}
+      title={resolvedTheme === "dark" ? "浅色模式" : "深色模式"}
     >
-      {resolvedTheme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+      {mounted && resolvedTheme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
     </Button>
   );
 }
@@ -141,7 +137,7 @@ function ProjectSwitcher() {
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
         </Button>
         {open && (
-          <div className="absolute left-full top-0 z-[60] ml-2 w-72 rounded-lg border border-border bg-popover p-1 shadow-md" role="menu">
+          <div className="absolute left-0 top-full z-[60] mt-2 w-full min-w-64 rounded-lg border border-border bg-popover p-1 shadow-md md:left-full md:top-0 md:ml-2 md:mt-0 md:w-72" role="menu">
             <div className="flex h-9 items-center justify-between border-b border-border px-2">
               <span className="text-xs font-medium text-muted-foreground">项目</span>
               <TooltipPrimitive.Provider delayDuration={250}>
@@ -262,12 +258,17 @@ export function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { activeProject } = useProject();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  const currentPage = NAV_ITEMS.find((item) => (
+  useEffect(() => setMobileNavOpen(false), [location.pathname, location.search]);
+
+  const currentPage = (location.pathname.startsWith("/settings")
+    ? { path: "/settings", label: "设置", icon: Settings }
+    : NAV_ITEMS.find((item) => (
     item.path === "/"
       ? location.pathname === "/"
       : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)
-  ));
+  )));
 
   const renderNavigation = () => (
     <>
@@ -297,7 +298,7 @@ export function Layout() {
             <button
               key={item.path}
               onClick={() => navigate(item.path)}
-              className={`flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-sm font-medium transition-colors ${
+              className={`flex h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-sm font-medium transition-colors active:scale-[0.99] md:h-9 ${
                 isActive
                   ? "bg-sidebar-accent text-sidebar-accent-foreground"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
@@ -313,8 +314,15 @@ export function Layout() {
       </nav>
 
       <div className="mt-auto border-t border-sidebar-border pt-3">
-        <div className="flex items-center justify-between px-2">
-          <span className="text-xs text-muted-foreground">外观</span>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => navigate("/settings")}
+            className={`flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${location.pathname.startsWith("/settings") ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground" : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
+          >
+            <Settings className="h-4 w-4" />
+            <span>设置</span>
+          </button>
           <ThemeToggle />
         </div>
         <p className="mt-3 px-2 text-[10px] leading-4 text-muted-foreground">本地优先的论文关系与研究笔记</p>
@@ -324,17 +332,34 @@ export function Layout() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <aside className="fixed inset-y-0 left-0 z-50 flex w-56 flex-col border-r border-sidebar-border bg-sidebar p-3">
+      <a href="#main-content" className="fixed left-3 top-3 z-[80] -translate-y-16 rounded-md bg-foreground px-3 py-2 text-sm text-background transition-transform focus:translate-y-0">
+        跳到主要内容
+      </a>
+      {mobileNavOpen && (
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-black/45 backdrop-blur-[1px] md:hidden"
+          onClick={() => setMobileNavOpen(false)}
+          aria-label="关闭导航"
+        />
+      )}
+      <aside className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-sidebar-border bg-sidebar p-3 transition-transform duration-200 ease-out md:w-56 md:translate-x-0 ${mobileNavOpen ? "translate-x-0" : "-translate-x-full"}`}>
+        <Button variant="ghost" size="icon" className="absolute right-2 top-2 md:hidden" onClick={() => setMobileNavOpen(false)} aria-label="关闭导航">
+          <X className="h-4 w-4" />
+        </Button>
         <div className="flex h-full flex-col">{renderNavigation()}</div>
       </aside>
 
-      <div className="min-h-screen pl-56">
-        <header className="sticky top-0 z-30 flex h-14 items-center border-b border-border bg-background/95 px-6 backdrop-blur-sm">
-          <span className="text-sm font-semibold">{location.pathname.startsWith("/papers/") ? "论文详情" : currentPage?.label || "CiteMap"}</span>
-          <span className="ml-2 text-xs text-muted-foreground">{currentPage?.path === "/" ? activeProject?.name : ""}</span>
+      <div className="min-h-screen md:pl-56">
+        <header className="sticky top-0 z-30 flex h-14 items-center border-b border-border bg-background/95 px-4 backdrop-blur-sm sm:px-5 lg:px-6">
+          <Button variant="ghost" size="icon" className="mr-2 md:hidden" onClick={() => setMobileNavOpen(true)} aria-label="打开导航">
+            <Menu className="h-5 w-5" />
+          </Button>
+          <span className="truncate text-sm font-semibold">{location.pathname.startsWith("/papers/") ? "论文详情" : currentPage?.label || "CiteMap"}</span>
+          <span className="ml-2 hidden truncate text-xs text-muted-foreground sm:inline">{currentPage?.path === "/" ? activeProject?.name : ""}</span>
         </header>
 
-        <main className="mx-auto w-full max-w-[1480px] p-6">
+        <main id="main-content" className="mx-auto w-full max-w-[1480px] p-4 sm:p-5 lg:p-6">
           <Outlet />
         </main>
       </div>

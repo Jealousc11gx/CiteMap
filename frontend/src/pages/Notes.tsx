@@ -25,14 +25,14 @@ export function Notes() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-9.5rem)] min-h-[600px] flex-col">
+    <div className="flex h-[calc(100dvh-7.5rem)] min-h-[520px] flex-col sm:h-[calc(100dvh-8.5rem)]">
       <div className="mb-3">
         <h1 className="workspace-heading">笔记</h1>
         <p className="workspace-description">浏览、编辑、预览当前项目中的 Markdown 笔记。</p>
       </div>
 
-      <div className="relative flex min-h-0 flex-1 flex-row overflow-hidden rounded-lg border bg-card">
-        <div className="h-full w-72 shrink-0 overflow-hidden border-r border-border bg-muted/20">
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card md:flex-row">
+        <div className="h-44 w-full shrink-0 overflow-hidden border-b border-border bg-muted/20 md:h-full md:w-72 md:border-b-0 md:border-r">
           <FileTree
             activeNoteId={activeNote?.paper_id}
             onSelectNote={handleSelectNote}
@@ -40,7 +40,7 @@ export function Notes() {
           />
         </div>
 
-        <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-card p-5">
+        <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-card p-3 sm:p-5">
           <NoteEditor
             noteId={activeNote?.paper_id}
             noteTitle={activeNote?.title}

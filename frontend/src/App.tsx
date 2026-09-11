@@ -8,6 +8,8 @@ import { Chat } from "@/pages/Chat";
 import { PaperDetail } from "@/pages/PaperDetail";
 import { Notes } from "@/pages/Notes";
 import { Radar } from "@/pages/Radar";
+import { Explore } from "@/pages/Explore";
+import { Settings } from "@/pages/Settings";
 import { ProjectProvider } from "@/contexts/ProjectContext";
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
@@ -47,9 +49,11 @@ function App() {
             <Route path="/graph" element={<Graph />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/notes" element={<Notes />} />
+            <Route path="/explore" element={<Explore />} />
             <Route path="/radar" element={<Radar />} />
-            <Route path="/settings/radar" element={<Navigate to="/radar" replace />} />
-            <Route path="/settings/radar/cloud" element={<Navigate to="/radar" replace />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/settings/radar" element={<Navigate to="/settings?tab=radar" replace />} />
+            <Route path="/settings/radar/cloud" element={<Navigate to="/settings?tab=radar" replace />} />
           </Route>
         </Routes>
       </ProjectProvider>
