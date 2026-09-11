@@ -47,7 +47,7 @@ const EMPTY_RADAR_CONFIG: Omit<RadarConfig, "project_id" | "updated_at"> = {
 
 const AI_NAMES = ["LLM_BASE_URL", "LLM_MODEL", "LLM_PROVIDER_TYPE", "LLM_CAPABILITIES", "LLM_MAX_CONTEXT_SIZE"];
 const EXPLORE_NAMES = [
-  "EXPLORE_DAY_OFFSET", "EXPLORE_ARXIV_ENABLED", "EXPLORE_HF_DAILY_ENABLED",
+  "EXPLORE_DAY_OFFSET", "EXPLORE_FETCH_LIMIT", "EXPLORE_ARXIV_ENABLED", "EXPLORE_HF_DAILY_ENABLED",
   "EXPLORE_HF_TRENDING_ENABLED", "EXPLORE_HF_TRENDING_MAX_AGE_DAYS",
   "EXPLORE_INCLUDE_HISTORICAL_MILESTONES", "EXPLORE_WATCHED_AUTHORS_ENABLED",
   "EXPLORE_WATCHED_AUTHORS", "EXPLORE_WATCHED_AUTHORS_WINDOW_DAYS", "EXPLORE_OPENREVIEW_ENABLED",
@@ -228,6 +228,11 @@ export function Settings() {
     window.addEventListener("beforeunload", warnBeforeUnload);
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
   }, [dirty]);
+
+  useEffect(() => {
+    if (loading || section !== "explore" || window.location.hash !== "#explore-topic-settings") return;
+    window.requestAnimationFrame(() => document.getElementById("explore-topic-settings")?.scrollIntoView({ block: "start" }));
+  }, [loading, section]);
 
   const value = (name: string) => settings.values[name] || "";
   const setValue = (name: string, next: string | boolean | number) => {
@@ -411,8 +416,20 @@ export function Settings() {
 
           {section === "explore" && (
             <>
+              {profile && (
+                <div id="explore-topic-settings" className="scroll-mt-24">
+                  <Section title="探索主题" description="主题决定采集范围；筛选、打分、分桶继续使用 LLM 推理优化算法。">
+                    <Field label="主题名称"><Input value={profile.name} onChange={(event) => { setProfile({ ...profile, name: event.target.value }); setDirty(true); setNotice(null); }} /></Field>
+                    <Field label="主题说明" hint="描述你在 LLM 推理优化中重点关注的方向。"><ExpandableTextarea rows={3} value={profile.description} onChange={(event) => { setProfile({ ...profile, description: event.target.value }); setDirty(true); setNotice(null); }} /></Field>
+                    <Field label="arXiv 分类" hint="例如 cs.LG=机器学习，cs.CL=计算语言学，cs.AR=硬件架构。"><Input value={profile.categories.join(", ")} onChange={(event) => { setProfile({ ...profile, categories: splitValues(event.target.value) }); setDirty(true); setNotice(null); }} /></Field>
+                    <Field label="重点关键词" hint="用于放宽本地预筛选；一行一个。"><ExpandableTextarea rows={4} value={profile.include_keywords.join("\n")} onChange={(event) => { setProfile({ ...profile, include_keywords: splitValues(event.target.value) }); setDirty(true); setNotice(null); }} /></Field>
+                    <Field label="排除关键词" hint="标题或摘要命中这些词时优先过滤；一行一个。"><ExpandableTextarea rows={4} value={profile.exclude_keywords.join("\n")} onChange={(event) => { setProfile({ ...profile, exclude_keywords: splitValues(event.target.value) }); setDirty(true); setNotice(null); }} /></Field>
+                  </Section>
+                </div>
+              )}
               <Section title="时间">
                 <Field label="目标日偏移" hint="UTC 天；默认 1。"><Input type="number" min="0" max="30" value={value("EXPLORE_DAY_OFFSET")} onChange={(event) => setValue("EXPLORE_DAY_OFFSET", event.target.value)} /></Field>
+                <Field label="每个来源采集上限" hint="默认 100。只限制原始候选，采集不调用 LLM。"><Input type="number" min="10" max="500" step="10" value={value("EXPLORE_FETCH_LIMIT")} onChange={(event) => setValue("EXPLORE_FETCH_LIMIT", event.target.value)} /></Field>
                 <Field label="Hugging Face 热门榜最大年龄" hint="只保留目标日前 N 天内的论文；默认 30 天。"><Input type="number" min="0" max="3650" value={value("EXPLORE_HF_TRENDING_MAX_AGE_DAYS")} onChange={(event) => setValue("EXPLORE_HF_TRENDING_MAX_AGE_DAYS", event.target.value)} /></Field>
                 <ToggleField label="Hugging Face 热门榜" hint="按 Hugging Face 热度补充近期论文。" checked={isChecked("EXPLORE_HF_TRENDING_ENABLED", true)} onChange={(checked) => setValue("EXPLORE_HF_TRENDING_ENABLED", checked)} />
                 <ToggleField label="保留历史精选" hint="允许精选论文突破年龄限制。" checked={isChecked("EXPLORE_INCLUDE_HISTORICAL_MILESTONES")} onChange={(checked) => setValue("EXPLORE_INCLUDE_HISTORICAL_MILESTONES", checked)} />
@@ -477,14 +494,6 @@ export function Settings() {
                 <Field label="OpenReview 会议路径" hint="一行一个，支持 {year}，例如 ICLR.cc/{year}/Conference。点击输入框展开编辑。"><ExpandableTextarea rows={6} value={value("EXPLORE_OPENREVIEW_VENUES").replaceAll(",", "\n")} onChange={(event) => setValue("EXPLORE_OPENREVIEW_VENUES", splitValues(event.target.value).join(","))} /></Field>
                 <InfoRow title="OpenReview 采集说明">按投稿时间倒序请求；进入设定时间范围外，或返回不足一页时自动停止。采集阶段不调用 LLM，不消耗 token。</InfoRow>
               </Section>
-              {profile && (
-                <Section title="探索主题" description="默认主题用于发现 LLM 推理、压缩、部署相关论文，可按你的研究方向修改。">
-                  <Field label="名称"><Input value={profile.name} onChange={(event) => { setProfile({ ...profile, name: event.target.value }); setDirty(true); setNotice(null); }} /></Field>
-                  <Field label="arXiv 分类" hint="例如 cs.LG=机器学习，cs.CL=计算语言学，cs.AR=硬件架构。"><Input value={profile.categories.join(", ")} onChange={(event) => { setProfile({ ...profile, categories: splitValues(event.target.value) }); setDirty(true); setNotice(null); }} /></Field>
-                  <Field label="纳入关键词" hint="标题或摘要包含这些词时优先保留；一行一个。"><ExpandableTextarea rows={4} value={profile.include_keywords.join("\n")} onChange={(event) => { setProfile({ ...profile, include_keywords: splitValues(event.target.value) }); setDirty(true); setNotice(null); }} /></Field>
-                  <Field label="排除关键词" hint="标题或摘要包含这些词时过滤；一行一个。"><ExpandableTextarea rows={4} value={profile.exclude_keywords.join("\n")} onChange={(event) => { setProfile({ ...profile, exclude_keywords: splitValues(event.target.value) }); setDirty(true); setNotice(null); }} /></Field>
-                </Section>
-              )}
             </>
           )}
 
@@ -497,7 +506,7 @@ export function Settings() {
                 <Field label="arXiv 分类"><Input value={radarConfig.categories.join(", ")} onChange={(event) => setRadar("categories", splitValues(event.target.value))} /></Field>
                 <Field label="纳入关键词"><Textarea rows={3} value={radarConfig.include_keywords.join("\n")} onChange={(event) => setRadar("include_keywords", splitValues(event.target.value))} /></Field>
                 <Field label="排除关键词"><Textarea rows={3} value={radarConfig.exclude_keywords.join("\n")} onChange={(event) => setRadar("exclude_keywords", splitValues(event.target.value))} /></Field>
-                <Field label="返回前 K 篇"><Input type="number" min="1" max="100" value={radarConfig.top_k} onChange={(event) => setRadar("top_k", Number(event.target.value))} /></Field>
+                <Field label="返回前 K 篇" hint="每次运行最多保留的推荐数；邮件只发送其中本次新增的论文。"><Input type="number" min="1" max="100" value={radarConfig.top_k} onChange={(event) => setRadar("top_k", Number(event.target.value))} /></Field>
                 <Field label="抓取数量上限"><Input type="number" min="1" max="500" value={radarConfig.fetch_limit} onChange={(event) => setRadar("fetch_limit", Number(event.target.value))} /></Field>
                 <Field label="最低相似度"><Input type="number" min="0" max="1" step="0.01" value={radarConfig.min_score} onChange={(event) => setRadar("min_score", Number(event.target.value))} /></Field>
                 <Field label="计算模式"><select value={radarConfig.compute_mode} onChange={(event) => setRadar("compute_mode", event.target.value as RadarConfig["compute_mode"])} className={SELECT_CLASS}><option value="cloud">云端计算</option><option value="local">本地计算</option><option value="hybrid">云端优先，本地备用</option></select></Field>
@@ -530,6 +539,7 @@ export function Settings() {
                 <ToggleField label="项目调试模式" checked={radarConfig.debug} onChange={(checked) => setRadar("debug", checked)} />
               </Section>
               <Section title="邮件" collapsible={true} defaultOpen={false}>
+                <InfoRow title="发送范围">定时任务只发送本轮新增推荐，已发过的论文不会重复发送；雷达页仍保留历史结果。</InfoRow>
                 <Field label="发件人"><Input value={value("RADAR_EMAIL_SENDER")} onChange={(event) => setValue("RADAR_EMAIL_SENDER", event.target.value)} /></Field>
                 <Field label="收件人"><Input value={value("RADAR_EMAIL_RECEIVER")} onChange={(event) => setValue("RADAR_EMAIL_RECEIVER", event.target.value)} /></Field>
                 {secretField("RADAR_EMAIL_PASSWORD", "邮箱密码 / 应用专用密码")}

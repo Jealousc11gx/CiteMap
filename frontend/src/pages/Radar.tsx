@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle2, ExternalLink, FileSearch, Loader2, Radar as RadarIcon, RefreshCw, Save, X } from "lucide-react";
+import { CheckCircle2, ExternalLink, FileSearch, Info, Loader2, Radar as RadarIcon, RefreshCw, Save, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -164,6 +164,7 @@ export function Radar() {
           {(config.compute_mode !== "cloud" || connectionSaved) && <Button onClick={runScan} disabled={scanning}>{scanning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}{scanning ? "运行中" : config.compute_mode === "local" ? "本地扫描" : "获取结果"}</Button>}
         </div>
       </div>
+      <p className="flex items-center gap-2 text-xs text-muted-foreground"><Info className="h-3.5 w-3.5 shrink-0" />邮件只发送每次云端运行新出现的推荐；雷达页保留全部历史结果。</p>
       {error && <ErrorAlert title="雷达操作失败" message={error} onRetry={() => void load()} />}
       {notice && <div className="flex items-center gap-2 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300" role="status"><CheckCircle2 className="h-4 w-4 shrink-0" />{notice}<button className="ml-auto rounded p-1 hover:bg-emerald-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setNotice(null)} aria-label="关闭提示"><X className="h-3.5 w-3.5" /></button></div>}
       {!connectionSaved && config.compute_mode !== "local" && (

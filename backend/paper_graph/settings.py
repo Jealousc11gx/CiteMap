@@ -33,6 +33,7 @@ SETTING_DEFAULTS: dict[str, str] = {
     "RADAR_SMTP_SSL": "true",
     "OPENREVIEW_EMAIL": "",
     "EXPLORE_DAY_OFFSET": "1",
+    "EXPLORE_FETCH_LIMIT": "100",
     "EXPLORE_ARXIV_ENABLED": "true",
     "EXPLORE_HF_DAILY_ENABLED": "true",
     "EXPLORE_HF_TRENDING_ENABLED": "true",
@@ -160,6 +161,7 @@ def env_authors(name: str, default: str) -> list[tuple[str, str]]:
 
 def get_explore_runtime_config() -> dict:
     return {
+        "fetch_limit": env_int("EXPLORE_FETCH_LIMIT", 100, minimum=10, maximum=500),
         "arxiv_enabled": env_bool("EXPLORE_ARXIV_ENABLED", True),
         "hf_daily_enabled": env_bool("EXPLORE_HF_DAILY_ENABLED", True),
         "hf_trending_enabled": env_bool("EXPLORE_HF_TRENDING_ENABLED", True),

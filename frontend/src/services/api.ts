@@ -232,11 +232,11 @@ export async function runVenueTrend(venue: string, maxPages = 20, model?: string
   return res.json();
 }
 
-export async function scanExplore(profileId = "explore_default", maxResults = 100): Promise<{ profile_id: string; status: string; candidate_count: number; stored_count: number }> {
+export async function scanExplore(profileId = "explore_default", maxResults?: number): Promise<{ profile_id: string; status: string; candidate_count: number; stored_count: number }> {
   const res = await fetch(`${API_BASE}/explore/scan?profile_id=${encodeURIComponent(profileId)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ max_results: maxResults }),
+    body: JSON.stringify(maxResults == null ? {} : { max_results: maxResults }),
   });
   if (!res.ok) {
     const detail = (await res.json().catch(() => null))?.detail;

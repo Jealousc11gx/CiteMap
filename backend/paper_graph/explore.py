@@ -599,7 +599,14 @@ def judge_explore_candidate(
             "client": llm,
             "model": model or get_default_model(),
             "system": load_prompt("explore_relevance.md"),
-            "user": f"Title: {candidate['title']}\n\nAbstract: {candidate['abstract']}",
+            "user": (
+                "Configured exploration focus (use this to prioritize within the rubric):\n"
+                f"- name: {profile['name']}\n"
+                f"- description: {profile.get('description') or 'not specified'}\n"
+                f"- preferred keywords: {', '.join(profile.get('include_keywords') or []) or 'none'}\n"
+                f"- excluded keywords: {', '.join(profile.get('exclude_keywords') or []) or 'none'}\n\n"
+                f"Title: {candidate['title']}\n\nAbstract: {candidate['abstract']}"
+            ),
             "max_tokens": 1024,
         }
         if sleep is not None:

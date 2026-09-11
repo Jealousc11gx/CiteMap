@@ -61,7 +61,7 @@ from paper_graph.explore import (
     transition_explore_triage,
     update_explore_profile,
 )
-from paper_graph.settings import get_app_settings, update_app_settings
+from paper_graph.settings import get_app_settings, get_explore_runtime_config, update_app_settings
 from paper_graph.venue_trend import get_venue_trend_run, list_venue_trend_runs, run_venue_trend
 from paper_graph.ingest import ingest_local_pdf, ingest_arxiv_id, search_arxiv, search_arxiv_only, _download_arxiv_pdf
 from paper_graph.annotate import annotate_paper, annotate_all, get_default_model, get_client, AnnotationError
@@ -208,7 +208,7 @@ class RadarConnectionRequest(BaseModel):
 
 
 class ExploreScanRequest(BaseModel):
-    max_results: int = 100
+    max_results: Optional[int] = None
 
 
 class ExploreProfileRequest(BaseModel):
@@ -537,7 +537,10 @@ def api_scan_explore(req: ExploreScanRequest, profile_id: str = "explore_default
     init_db(DB_PATH)
     conn = get_connection(DB_PATH)
     try:
-        return scan_explore(conn, profile_id, max_results=req.max_results)
+        max_results = req.max_results
+        if max_results is None:
+            max_results = get_explore_runtime_config()["fetch_limit"]
+        return scan_explore(conn, profile_id, max_results=max_results)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

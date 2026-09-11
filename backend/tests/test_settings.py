@@ -51,3 +51,9 @@ def test_watched_authors_are_configurable(monkeypatch):
         ("Alice Zhang", "Lab A"),
         ("Bob Li", ""),
     ]
+
+
+def test_explore_fetch_limit_is_bounded(monkeypatch):
+    monkeypatch.setenv("EXPLORE_FETCH_LIMIT", "900")
+
+    assert get_explore_runtime_config()["fetch_limit"] == 500

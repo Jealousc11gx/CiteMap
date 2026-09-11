@@ -12,6 +12,7 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  Settings2,
   Sparkles,
   UserRound,
   X,
@@ -295,6 +296,7 @@ export function Explore() {
   const [triage, setTriage] = useState<TriageFilter>("unreviewed");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [candidateLimit, setCandidateLimit] = useState(30);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -318,7 +320,7 @@ export function Explore() {
       const [nextDigest, nextTrends, nextCandidates] = await Promise.all([
         fetchExploreDigest(profileId),
         fetchExploreTrends(profileId),
-        fetchExploreCandidates({ profileId, source, topic, triageStatus: triage === "all" ? undefined : triage, query: debouncedQuery, limit: 100 }),
+        fetchExploreCandidates({ profileId, source, topic, triageStatus: triage === "all" ? undefined : triage, query: debouncedQuery, limit: candidateLimit }),
       ]);
       setDigest(nextDigest);
       setTrends(nextTrends);
@@ -329,9 +331,11 @@ export function Explore() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedQuery, source, topic, triage]);
+  }, [candidateLimit, debouncedQuery, source, topic, triage]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => { setCandidateLimit(30); }, [debouncedQuery, source, topic, triage]);
 
   const topics = useMemo(() => Object.keys(trends?.topics || {}).sort(), [trends]);
   const sources = useMemo(() => Array.from(new Set(["arxiv", "hf_daily", ...Object.keys(digest?.source_counts || {})])).sort(), [digest]);
@@ -405,6 +409,14 @@ export function Explore() {
           <p className="workspace-description mt-1">
             {profile?.name ? `围绕“${profile.name}”发现值得关注的新论文，确认后再加入研究项目。` : "发现值得关注的新论文，确认后再加入研究项目。"}
           </p>
+          {profile && <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span className="font-medium">当前主题：{profile.name}</span>
+            {profile.categories.map((category) => <Badge key={category} variant="outline" className="font-normal">{category}</Badge>)}
+            {profile.include_keywords.length > 0 && <span className="text-muted-foreground">{profile.include_keywords.length} 个重点关键词</span>}
+            <button type="button" onClick={() => navigate("/settings?tab=explore#explore-topic-settings")} className="inline-flex items-center gap-1 rounded-sm px-1.5 py-1 font-medium text-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <Settings2 className="h-3.5 w-3.5" />设置主题
+            </button>
+          </div>}
         </div>
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <Button variant="outline" onClick={handleScan} disabled={syncing || analyzing} className="min-w-0">
@@ -424,8 +436,13 @@ export function Explore() {
         <TabsContent value="digest" className="mt-5">{loading ? <LoadingState /> : <DigestView digest={digest} trends={trends} onOpen={setSelected} onGoPool={() => setTab("pool")} onManageAuthors={() => navigate("/settings?tab=explore")} />}</TabsContent>
         <TabsContent value="pool" className="mt-5">
           <Card>
-            <CardHeader className="border-b pb-5"><div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div><CardTitle>候选论文</CardTitle><CardDescription className="mt-1">{loading ? "正在更新" : `当前筛选下 ${candidates.length} 篇`}</CardDescription></div><div className="flex flex-wrap items-center gap-2"><FilterSelect label="来源" value={source} onChange={(value) => setSource(value)} options={[{ value: "all", label: "全部来源" }, ...sources.map((item) => ({ value: item, label: sourceLabel(item) }))]} /><FilterSelect label="主题" value={topic} onChange={(value) => setTopic(value)} options={[{ value: "all", label: "全部主题" }, ...topics.map((item) => ({ value: item, label: item }))]} /><FilterSelect label="状态" value={triage} onChange={(value) => setTriage(value as TriageFilter)} options={[{ value: "all", label: "全部状态" }, ...Object.entries(TRIAGE_LABELS).map(([value, label]) => ({ value, label }))]} /></div></div><div className="relative max-w-md"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题或摘要" className="pl-9" /></div></CardHeader>
-            <CardContent className="pt-1">{loading ? <LoadingState /> : candidates.length ? candidates.map((candidate) => <CandidateRow key={candidate.id} candidate={candidate} busy={busyId === candidate.id} onOpen={setSelected} onTriage={(item, status) => void handleTriage(item, status)} />) : <EmptyState title="没有候选论文" description="调整筛选条件，或采集一次新论文。" />}</CardContent>
+            <CardHeader className="border-b pb-5"><div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div><CardTitle>候选论文</CardTitle><CardDescription className="mt-1">{loading ? "正在更新" : `当前显示 ${candidates.length} 篇`}</CardDescription></div><div className="flex flex-wrap items-center gap-2"><FilterSelect label="来源" value={source} onChange={(value) => setSource(value)} options={[{ value: "all", label: "全部来源" }, ...sources.map((item) => ({ value: item, label: sourceLabel(item) }))]} /><FilterSelect label="主题" value={topic} onChange={(value) => setTopic(value)} options={[{ value: "all", label: "全部主题" }, ...topics.map((item) => ({ value: item, label: item }))]} /><FilterSelect label="状态" value={triage} onChange={(value) => setTriage(value as TriageFilter)} options={[{ value: "all", label: "全部状态" }, ...Object.entries(TRIAGE_LABELS).map(([value, label]) => ({ value, label }))]} /></div></div><div className="relative max-w-md"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题或摘要" className="pl-9" /></div></CardHeader>
+            <CardContent className="pt-1">
+              {loading ? <LoadingState /> : candidates.length ? <>
+                {candidates.map((candidate) => <CandidateRow key={candidate.id} candidate={candidate} busy={busyId === candidate.id} onOpen={setSelected} onTriage={(item, status) => void handleTriage(item, status)} />)}
+                {candidates.length >= candidateLimit && candidateLimit < 100 && <div className="flex justify-center border-t py-4"><Button type="button" variant="outline" size="sm" onClick={() => setCandidateLimit((current) => Math.min(100, current + 30))}>{candidateLimit >= 90 ? "再显示 10 篇" : "再显示 30 篇"}</Button></div>}
+              </> : <EmptyState title="没有候选论文" description="调整筛选条件，或采集一次新论文。" />}
+            </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
